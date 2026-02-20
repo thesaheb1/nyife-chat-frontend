@@ -3,13 +3,13 @@ import FallbackPage from "@/components/fallback-page";
 import Auth from "./Auth/Auth.jsx";
 
 // Lazy load route components to optimize performance
-const AdminRoutes = lazy(() => import("./UserRoutes/UserRoutes.jsx"));
-const UserRoutes = lazy(() => import("./AdminRoutes/AdminRoutes.jsx"));
+const AdminRoutes = lazy(() => import("./AdminRoutes/AdminRoutes.jsx"));
+const UserRoutes = lazy(() => import("./UserRoutes/UserRoutes.jsx"));
 
 const Routes = () => {
 
   const isLoggedIn = true;
-  const accountType = 'admin';
+  const accountType = 'user';
 
   // Memoized function to determine the correct routes
   const renderRoutes = useMemo(() => {
