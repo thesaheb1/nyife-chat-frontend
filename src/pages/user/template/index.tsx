@@ -191,8 +191,8 @@ export default function TemplatesPage() {
   // Client-side sort for current page
   const sortedTemplates = [...templates].sort((a, b) => {
     const dir = sortDir === "asc" ? 1 : -1;
-    const av = (a as Record<string, string>)[sortField] || "";
-    const bv = (b as Record<string, string>)[sortField] || "";
+    const av = (a as any)[sortField] || "";
+    const bv = (b as any)[sortField] || "";
     return av.localeCompare(bv) * dir;
   });
 
@@ -565,6 +565,9 @@ function TemplateRow({
     UTILITY: "bg-blue-100 text-blue-700 border-blue-200",
     AUTHENTICATION: "bg-orange-100 text-orange-700 border-orange-200",
   };
+
+
+
 
   return (
     <tr className="hover:bg-muted/40 transition-colors group">

@@ -58,6 +58,7 @@ export interface TemplateComponent {
   };
 }
 
+
 export interface Template {
   uuid: string;
   id?: string;
