@@ -91,7 +91,7 @@ export const adminRouteList = [
     element: AdminSubscriptionPlans,
     pageKey: "admin_subscription_plans",
     sidebarProps: {
-      displayText: "admin_Subscription Plans",
+      displayText: "Subscription Plans",
       icon: RouteIcons["Subscription Plans"],
     },
     defaultRender: false,
