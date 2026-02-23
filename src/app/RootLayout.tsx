@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { AppSidebar } from "@/components/app-sidebar"
+import { AppSidebar, type SidebarRoute } from "@/components/app-sidebar"
 import Header from "@/components/header"
 import {
     SidebarInset,
@@ -8,14 +8,13 @@ import {
 
 interface RootLayoutProps {
     children: ReactNode,
-    sidebar: any
+    sidebar: SidebarRoute[]
 }
 
 export default function RootLayout({ children, sidebar }: RootLayoutProps) {
-    console.log(sidebar)
     return (
         <SidebarProvider>
-            <AppSidebar />
+            <AppSidebar routes={sidebar} />
             <SidebarInset>
                 <Header />
                 <div className="flex flex-1 flex-col gap-4 p-4 pt-0">

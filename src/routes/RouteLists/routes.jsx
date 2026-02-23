@@ -9,19 +9,23 @@ function renderRoutes(routes) {
       return { ...route, element: <Navigate to={route.redirectTo} replace /> };
     }
 
+    const Component = route.element;
+    const routeWithElement = Component
+      ? {
+        ...route,
+        element: (
+          <Suspense fallback={<FallbackPage />}>
+            <Component />
+          </Suspense>
+        ),
+      }
+      : { ...route };
+
     if (route.child) {
-      return { ...route, child: renderRoutes(route.child) };
+      return { ...routeWithElement, child: renderRoutes(route.child) };
     }
 
-    const Component = route.element;
-    return {
-      ...route,
-      element: (
-        <Suspense fallback={<FallbackPage />}>
-          <Component />
-        </Suspense>
-      ),
-    };
+    return routeWithElement;
   });
 }
 

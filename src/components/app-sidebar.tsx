@@ -3,19 +3,11 @@
 import * as React from "react"
 import {
   AudioWaveform,
-  BookOpen,
-  Bot,
   Command,
-  Frame,
   GalleryVerticalEnd,
-  Map,
-  PieChart,
-  Settings2,
-  SquareTerminal,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -26,7 +18,16 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 
-// This is sample data.
+export type SidebarRoute = {
+  path?: string
+  pageKey?: string
+  sidebarProps?: {
+    displayText?: string
+    icon?: React.ReactNode
+  }
+  child?: SidebarRoute[]
+}
+
 const data = {
   user: {
     name: "shadcn",
@@ -50,121 +51,58 @@ const data = {
       plan: "Free",
     },
   ],
-  navMain: [
-    {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Models",
-      url: "#",
-      icon: Bot,
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: Settings2,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: Frame,
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: PieChart,
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: Map,
-    },
-  ],
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+const createNavItems = (routes: SidebarRoute[] = []) => {
+  return routes
+    .map((route) => {
+      const childItems = (route.child ?? [])
+        .map((child) => {
+          const childTitle = child.sidebarProps?.displayText
+          if (!child.path || !childTitle) return null
+
+          return {
+            title: childTitle,
+            url: child.path,
+          }
+        })
+        .filter(Boolean) as { title: string; url: string }[]
+
+      const ownTitle = route.sidebarProps?.displayText
+      const ownPath = route.path
+
+      if (!ownTitle) return null
+      if (!ownPath && childItems.length === 0) return null
+
+      return {
+        title: ownTitle,
+        url: ownPath ?? childItems[0].url,
+        icon: route.sidebarProps?.icon,
+        items: childItems.length > 0 ? childItems : undefined,
+      }
+    })
+    .filter(Boolean) as {
+    title: string
+    url: string
+    icon?: React.ReactNode
+    items?: { title: string; url: string }[]
+  }[]
+}
+
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  routes?: SidebarRoute[]
+}
+
+export function AppSidebar({ routes = [], ...props }: AppSidebarProps) {
+  const navMainItems = React.useMemo(() => createNavItems(routes), [routes])
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        <NavMain items={navMainItems} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
