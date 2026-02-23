@@ -1,4 +1,31 @@
-const hasPermissionAccess = (routePermission, accessPermission) => {
+import type { ComponentType, ReactNode } from "react";
+
+export type PermissionMap = Partial<Record<"view" | "create" | "update" | "delete", string>>;
+
+export interface SidebarProps {
+  displayText?: string;
+  icon?: ReactNode;
+}
+
+export interface AppRoute {
+  path?: string;
+  element?: ComponentType | ReactNode;
+  pageKey?: string;
+  permission?: PermissionMap;
+  sidebarProps?: SidebarProps;
+  defaultRender?: boolean;
+  redirectTo?: string;
+  child?: AppRoute[];
+}
+
+export type SidebarRoute = Omit<AppRoute, "element" | "permission" | "defaultRender"> & {
+  child?: SidebarRoute[];
+};
+
+const hasPermissionAccess = (
+  routePermission?: PermissionMap,
+  accessPermission?: PermissionMap
+): boolean => {
   if (!routePermission) return true;
   if (!accessPermission) return false;
 
@@ -12,8 +39,8 @@ const hasPermissionAccess = (routePermission, accessPermission) => {
   return false;
 };
 
-export const filterRoutes = (appRoutes = [], accessRoutes = []) => {
-  const accessMap = new Map();
+export const filterRoutes = (appRoutes: AppRoute[] = [], accessRoutes: AppRoute[] = []): AppRoute[] => {
+  const accessMap = new Map<string, AppRoute>();
   const stack = [...accessRoutes];
 
   while (stack.length) {
@@ -29,10 +56,10 @@ export const filterRoutes = (appRoutes = [], accessRoutes = []) => {
     }
   }
 
-  const filterNode = (route) => {
+  const filterNode = (route: AppRoute): AppRoute | null => {
     const matchedAccess = route?.pageKey ? accessMap.get(route.pageKey) : undefined;
     const filteredChildren = Array.isArray(route?.child)
-      ? route.child.map(filterNode).filter(Boolean)
+      ? route.child.map(filterNode).filter((child): child is AppRoute => child !== null)
       : undefined;
 
     const selfAllowed = Boolean(
@@ -54,23 +81,24 @@ export const filterRoutes = (appRoutes = [], accessRoutes = []) => {
     return nextRoute;
   };
 
-  return appRoutes.map(filterNode).filter(Boolean);
+  return appRoutes.map(filterNode).filter((route): route is AppRoute => route !== null);
 };
 
-export const buildSidebarRoutes = (routeTree = []) => {
+export const buildSidebarRoutes = (routeTree: AppRoute[] = []): SidebarRoute[] => {
   return routeTree.map((route) => {
     const { element, permission, defaultRender, child, ...sidebarRoute } = route;
+    const nextSidebarRoute: SidebarRoute = { ...sidebarRoute };
 
     if (Array.isArray(child) && child.length > 0) {
-      sidebarRoute.child = buildSidebarRoutes(child);
+      nextSidebarRoute.child = buildSidebarRoutes(child);
     }
 
-    return sidebarRoute;
+    return nextSidebarRoute;
   });
 };
 
-export const flattenRoutes = (routeTree = []) => {
-  const flat = [];
+export const flattenRoutes = (routeTree: AppRoute[] = []): AppRoute[] => {
+  const flat: AppRoute[] = [];
   const stack = [...routeTree];
 
   while (stack.length) {

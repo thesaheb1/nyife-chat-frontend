@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useForm, useFieldArray, Controller, useWatch } from "react-hook-form";
+import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -59,7 +59,7 @@ import TemplateTypeSelector, {
   TEMPLATE_TYPES,
   type TemplateTypeId,
 } from "./TemplateTypeSelector";
-import type { TemplateComponent, TemplateCategory } from "@/types/template.types";
+import type { TemplateComponent } from "@/types/template.types";
 import type { UseFormReturn } from "react-hook-form";
 import type { TemplateButton } from "@/types/template.types";
 
@@ -70,7 +70,6 @@ const MAX_BODY = 1024;
 const MAX_HEADER_TEXT = 60;
 const MAX_FOOTER = 60;
 const MAX_BUTTON_TEXT = 25;
-const MAX_URL_BUTTON_TEXT = 25;
 
 const buttonSchema = z
   .object({
@@ -493,7 +492,7 @@ export default function TemplateForm({
     mode: "onChange",
   });
 
-  const { fields, append, remove, replace } = useFieldArray({
+  const { append, remove, replace } = useFieldArray({
     control: form.control,
     name: "components",
   });
@@ -501,7 +500,6 @@ export default function TemplateForm({
   const watchedComponents = form.watch("components");
   const watchedCategory = form.watch("category");
   const watchedName = form.watch("name");
-  const watchedLanguage = form.watch("language");
 
   // When a type is confirmed, reset form to sample defaults
   const handleTypeConfirm = () => {
@@ -850,7 +848,6 @@ export default function TemplateForm({
             ) : (
               <StandardSections
                 form={form}
-                fields={fields}
                 append={append}
                 remove={remove}
                 existingTypes={existingTypes}
@@ -1261,7 +1258,6 @@ function LayoutGridIcon() {
 // ─────────────────────────────────────────────────────────────
 interface StandardSectionsProps {
   form: UseFormReturn<TemplateFormValues>;
-  fields: ReturnType<typeof useFieldArray<TemplateFormValues, "components">>["fields"];
   append: ReturnType<typeof useFieldArray<TemplateFormValues, "components">>["append"];
   remove: ReturnType<typeof useFieldArray<TemplateFormValues, "components">>["remove"];
   existingTypes: Set<string>;
@@ -1273,7 +1269,6 @@ interface StandardSectionsProps {
 
 function StandardSections({
   form,
-  fields,
   append,
   remove,
   existingTypes,
@@ -1313,7 +1308,6 @@ function StandardSections({
         <BodySectionCard
           form={form}
           index={bodyIdx}
-          category={watchedCategory}
         />
       )}
 
@@ -1546,11 +1540,9 @@ function HeaderSectionCard({
 function BodySectionCard({
   form,
   index,
-  category,
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
-  category: string;
 }) {
   const text = form.watch(`components.${index}.text`) || "";
   const [showVariableHelp, setShowVariableHelp] = useState(false);

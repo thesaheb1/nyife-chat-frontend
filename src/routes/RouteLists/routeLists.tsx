@@ -1,5 +1,7 @@
 import { lazy } from "react";
 import { RouteIcons } from "@/constants/RouteIcons";
+import type { AppRoute } from "../../helpers/routeAccessHelpers";
+
 const PageNotFound = lazy(() =>
   import("@/components/page-not-found")
 );
@@ -30,24 +32,24 @@ const UserNotificationSettings = lazy(() => import("@/pages/user/settings/notifi
 const UserProfile = lazy(() => import("@/pages/user/profile"));
 
 
-export const adminRouteList = [
+export const adminRouteList: AppRoute[] = [
   {
     path: "/",
     element: AdminDashboard,
     pageKey: "admin_dashboard",
-    permission: { view: "/" }, // can only view the dashboard on (/) route
+    permission: { view: "/" },
     sidebarProps: {
       displayText: "Dashboard",
       icon: RouteIcons["Dashboard"],
     },
-    defaultRender: false, // means that the route will not be rendered by default (only if the user has access)
+    defaultRender: false,
   },
   // ── Users ──────────────────────────────────────────────────
   {
     path: "/users",
     element: AdminUsers,
     pageKey: "admin_users",
-    permission: { view: "/users", update: "/users", create: "/users", delete: "/users" }, // can view, update, create, delete users on (/users) route
+    permission: { view: "/users", update: "/users", create: "/users", delete: "/users" },
     sidebarProps: {
       displayText: "Users",
       icon: RouteIcons["Users"],
@@ -58,7 +60,7 @@ export const adminRouteList = [
         path: "/users/:userId",
         element: AdminUserDetails,
         pageKey: "admin_user_details",
-        permission: { view: "/users/:userId", update: "/users/:userId", create: "/users/:userId", delete: "/users/:userId" }, // same as above
+        permission: { view: "/users/:userId", update: "/users/:userId", create: "/users/:userId", delete: "/users/:userId" },
         defaultRender: false,
       }
     ],
@@ -68,7 +70,7 @@ export const adminRouteList = [
     path: "/support",
     element: AdminSupport,
     pageKey: "admin_support",
-    permission: { view: "/support", update: "/support", create: "/support", delete: "/support" }, // same as above
+    permission: { view: "/support", update: "/support", create: "/support", delete: "/support" },
     sidebarProps: {
       displayText: "Support",
       icon: RouteIcons["Support"],
@@ -144,7 +146,7 @@ export const adminRouteList = [
     permission: { view: "/profile", update: "/profile" },
     element: AdminProfile,
     pageKey: "admin_profile",
-    defaultRender: true, // means that the route will be rendered by default (even user has no access)
+    defaultRender: true,
   },
   // ── Authentication Routes ─────────────────────────────────────────
   {
@@ -168,7 +170,7 @@ export const adminRouteList = [
   },
 ];
 
-export const userRouteList = [
+export const userRouteList: AppRoute[] = [
   {
     path: "/",
     element: UserDashboard,
@@ -217,7 +219,7 @@ export const userRouteList = [
     },
     sidebarProps: {
       displayText: "Templates",
-      icon: RouteIcons["Templates"], // make sure to add this to RouteIcons
+      icon: RouteIcons["Templates"],
     },
     defaultRender: false,
     child: [
