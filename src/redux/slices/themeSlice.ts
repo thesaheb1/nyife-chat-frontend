@@ -6,8 +6,33 @@ export interface ThemeState {
   mode: ThemeMode;
 }
 
+const getInitialThemeMode = (): ThemeMode => {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+
+  try {
+    const persistedRoot = localStorage.getItem("persist:root");
+
+    if (persistedRoot) {
+      const parsedRoot = JSON.parse(persistedRoot) as { theme?: string };
+
+      if (parsedRoot.theme) {
+        const parsedTheme = JSON.parse(parsedRoot.theme) as { mode?: ThemeMode };
+        if (parsedTheme.mode === "light" || parsedTheme.mode === "dark") {
+          return parsedTheme.mode;
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed persisted values and fall back to system preference.
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
+
 const initialState: ThemeState = {
-  mode: "light",
+  mode: getInitialThemeMode(),
 };
 
 const themeSlice = createSlice({

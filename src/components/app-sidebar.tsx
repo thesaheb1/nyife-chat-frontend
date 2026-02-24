@@ -99,16 +99,16 @@ export function AppSidebar({ routes = [], ...props }: AppSidebarProps) {
   return (
     <Sidebar
       collapsible="icon"
-      className="border-r border-zinc-200 bg-[#f3f3f5] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+      className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
       {...props}
     >
-      <SidebarHeader className="gap-2 border-b border-zinc-200 px-2 py-2 dark:border-zinc-800">
+      <SidebarHeader className="gap-2 border-b border-sidebar-border px-2 py-2">
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent className="px-2 py-2">
         <NavMain items={navMainItems} />
       </SidebarContent>
-      <SidebarFooter className="border-t border-zinc-200 px-2 py-2 dark:border-zinc-800">
+      <SidebarFooter className="border-t border-sidebar-border px-2 py-2">
         <NavUser user={data.user} />
       </SidebarFooter>
       <SidebarRail />
