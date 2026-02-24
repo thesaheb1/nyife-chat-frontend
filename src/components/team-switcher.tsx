@@ -43,7 +43,7 @@ export function TeamSwitcher({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              className="data-[state=open]:bg-sidebar-accent bg-gray-200 data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center rounded-lg">
                 <img src={nyifeIcon} alt="nyife-icon" className="size-8 bg-transparent" />
