@@ -1,18 +1,25 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 export type ConfirmationCallback = (() => void) | null;
+export interface ConfirmationCustomText {
+  title?: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+  confirmColor?: "primary" | "error" | "success";
+}
 
 export interface ConfirmationState {
   open: boolean;
   actionType: string | null;
   callbackFunction: ConfirmationCallback;
-  customText: string | null;
+  customText: ConfirmationCustomText | null;
 }
 
 export interface OpenConfirmationPayload {
   actionType: string;
   callbackFunction?: ConfirmationCallback;
-  customText?: string | null;
+  customText?: ConfirmationCustomText | null;
 }
 
 const initialState: ConfirmationState = {

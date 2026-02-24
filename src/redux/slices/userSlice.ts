@@ -1,14 +1,18 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+export type UserRole = "user" | "subuser" | "admin" | "subadmin";
+
 export interface UserData {
   email?: string;
-  role?: string;
+  role?: UserRole;
+  routeList?: unknown[];
+  accessRoutes?: unknown[];
   [key: string]: unknown;
 }
 
 export interface UserState {
   login: boolean;
-  type: string;
+  type: UserRole | "";
   token: string | null;
   data: UserData;
 }
@@ -41,7 +45,13 @@ const userSlice = createSlice({
       if (hasUserObject && isTokenValid && isEmailValid) {
         state.login = true;
         state.token = token;
-        state.type = typeof user.role === "string" ? user.role : "";
+        state.type =
+          user.role === "user" ||
+          user.role === "subuser" ||
+          user.role === "admin" ||
+          user.role === "subadmin"
+            ? user.role
+            : "";
         state.data = user;
       }
     },

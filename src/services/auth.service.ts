@@ -1,14 +1,34 @@
 export interface ApiResponse<T = unknown> {
-  success: boolean;
+  success?: boolean;
   message?: string;
   data?: T;
 }
 
-export interface AdminUserData {
+export interface LoginUser {
+  id: number;
+  email: string;
+  name?: string;
+  role: "user" | "subuser" | "admin" | "subadmin";
+  routeList?: unknown[];
+  accessRoutes?: unknown[];
+  [key: string]: unknown;
+}
+
+export interface AuthUserData {
   token: string;
   email: string;
-  role?: string;
+  role: LoginUser["role"];
+  id?: number;
+  name?: string;
+  routeList?: unknown[];
+  accessRoutes?: unknown[];
   [key: string]: unknown;
+}
+
+interface LoginApiRawResponse {
+  message?: string;
+  token?: string;
+  user?: LoginUser;
 }
 
 interface LoginPayload {
@@ -36,6 +56,8 @@ export interface ForgotPasswordResponseData {
 }
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3003";
+const AUTH_BASE_URL =
+  import.meta.env.VITE_AUTH_API_BASE_URL || "http://localhost:3000/user-service/api";
 
 const getHeaders = (): HeadersInit => ({
   "Content-Type": "application/json",
@@ -67,8 +89,32 @@ async function requestJson<T>(
 
 export async function loginAdmin(
   payload: LoginPayload,
-): Promise<ApiResponse<AdminUserData>> {
-  return requestJson<AdminUserData>("/admin/login", "POST", payload);
+): Promise<ApiResponse<AuthUserData>> {
+  const response = await fetch(`${AUTH_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  const result = (await response.json().catch(() => ({}))) as LoginApiRawResponse;
+
+  if (!response.ok || !result.token || !result.user?.email || !result.user?.role) {
+    throw new Error(result.message || `Login failed with status ${response.status}`);
+  }
+
+  return {
+    success: true,
+    message: result.message || "Login successful",
+    data: {
+      token: result.token,
+      id: result.user.id,
+      email: result.user.email,
+      name: result.user.name,
+      role: result.user.role,
+      routeList: result.user.routeList,
+      accessRoutes: result.user.accessRoutes,
+    },
+  };
 }
 
 export async function requestPasswordReset(

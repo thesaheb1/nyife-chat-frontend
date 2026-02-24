@@ -17,6 +17,7 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { useAppSelector } from "@/redux/store/hooks"
 
 export type SidebarRoute = {
   path?: string
@@ -29,11 +30,6 @@ export type SidebarRoute = {
 }
 
 const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
   teams: [
     {
       name: "Complia 1",
@@ -82,11 +78,11 @@ const createNavItems = (routes: SidebarRoute[] = []) => {
       }
     })
     .filter(Boolean) as {
-    title: string
-    url: string
-    icon?: React.ReactNode
-    items?: { title: string; url: string }[]
-  }[]
+      title: string
+      url: string
+      icon?: React.ReactNode
+      items?: { title: string; url: string }[]
+    }[]
 }
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
@@ -95,7 +91,14 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
 
 export function AppSidebar({ routes = [], ...props }: AppSidebarProps) {
   const navMainItems = React.useMemo(() => createNavItems(routes), [routes])
-
+  const userData = useAppSelector((state) => state.user.data)
+  const userName = typeof userData.name === "string" && userData.name.trim() ? userData.name : "User"
+  const userEmail =
+    typeof userData.email === "string" && userData.email.trim()
+      ? userData.email
+      : "No email available"
+  const userAvatar =
+    typeof userData.avatar === "string" && userData.avatar.trim() ? userData.avatar : ""
   return (
     <Sidebar
       collapsible="icon"
@@ -109,7 +112,13 @@ export function AppSidebar({ routes = [], ...props }: AppSidebarProps) {
         <NavMain items={navMainItems} />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border px-2 py-2">
-        <NavUser user={data.user} />
+        <NavUser
+          user={{
+            name: userName,
+            email: userEmail,
+            avatar: userAvatar
+          }}
+        />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
