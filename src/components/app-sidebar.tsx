@@ -97,14 +97,18 @@ export function AppSidebar({ routes = [], ...props }: AppSidebarProps) {
   const navMainItems = React.useMemo(() => createNavItems(routes), [routes])
 
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-zinc-200 bg-[#f3f3f5] text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+      {...props}
+    >
+      <SidebarHeader className="gap-2 border-b border-zinc-200 px-2 py-2 dark:border-zinc-800">
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="px-2 py-2">
         <NavMain items={navMainItems} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-zinc-200 px-2 py-2 dark:border-zinc-800">
         <NavUser user={data.user} />
       </SidebarFooter>
       <SidebarRail />

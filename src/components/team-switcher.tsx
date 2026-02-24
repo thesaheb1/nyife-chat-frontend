@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { ChevronsUpDown, Plus } from "lucide-react"
+import nyifeIcon from "/nyife-icon.svg"
 
 import {
   DropdownMenu,
@@ -18,7 +19,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import nyifeLogo from "@/assets/images/nyifeBrand.png"
 
 export function TeamSwitcher({
   teams,
@@ -45,13 +45,13 @@ export function TeamSwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              {/* <div className="text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg"> */}
-              <img src={nyifeLogo} width={80} height={80} alt="Nyife Logo" />
-              {/* </div> */}
-              {/* <div className="grid flex-1 text-left text-sm leading-tight">
+              <div className="text-sidebar-primary-foreground flex aspect-square items-center justify-center rounded-lg">
+                <img src={nyifeIcon} alt="nyife-icon" className="size-8 bg-transparent" />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{activeTeam.name}</span>
                 <span className="truncate text-xs">{activeTeam.plan}</span>
-              </div> */}
+              </div>
               <ChevronsUpDown className="ml-auto" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>

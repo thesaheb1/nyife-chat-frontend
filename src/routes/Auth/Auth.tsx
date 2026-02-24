@@ -1,12 +1,12 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import FallbackPage from "@/components/fallback-page";
-import Layout from "@/pages/authentication/layout";
+import Layout from "@/pages/Authentication/Layout";
 
 // Lazy load pages to improve performance
-const Login = lazy(() => import("@/pages/authentication/login"));
-const ForgotPassword = lazy(() => import("@/pages/authentication/forgot-password"));
-const ResetPassword = lazy(() => import("@/pages/authentication/reset-password"));
+const Login = lazy(() => import("@/pages/Authentication/Login/Login"));
+const ForgotPassword = lazy(() => import("@/pages/Authentication/ForgetPassword/FogetPassword"));
+const ResetPassword = lazy(() => import("@/pages/Authentication/ChangePassword/ChangePassword"));
 
 const Auth = () => {
   return (

@@ -94,7 +94,7 @@ const NoInternet = ({ refresh }: NoInternetProps) => {
 
             <div className="min-h-[calc(100vh-6rem)] sm:min-h-[calc(100vh-8rem)] flex items-center justify-center px-4">
                 <div className="w-full max-w-md mx-auto">
-                    <div className="flex flex-col items-center justify-center gap-8 text-center">
+                    <div className="flex flex-col items-center justify-center gap-16 text-center">
 
                         {/* Animated Icon */}
                         <FloatingElement delay={200}>

@@ -9,7 +9,7 @@ const AdminRoutes = lazy(() => import("./AdminRoutes/AdminRoutes"));
 const UserRoutes = lazy(() => import("./UserRoutes/UserRoutes"));
 
 const Routes = () => {
-  const isLoggedIn = true;
+  const isLoggedIn = false;
   const accountType: "admin" | "user" = "user";
   const routeListsByRole: Record<"admin" | "user", AppRoute[]> = {
     admin: adminRoutesList,

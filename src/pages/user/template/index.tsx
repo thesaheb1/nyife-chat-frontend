@@ -212,7 +212,7 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="flex flex-col h-full gap-4 p-6">
+    <div className="flex flex-col h-full gap-4">
       {/* ── Page Header ── */}
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Templates</h1>

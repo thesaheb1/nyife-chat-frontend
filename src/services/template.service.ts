@@ -13,7 +13,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3003";
 function getHeaders(): Record<string, string> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("jwt_token") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwiZW1haWwiOiJzYWhlYmJjYTIwMjBAZ21haWwuY29tIiwibWV0YUJ1c2luZXNzQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzE1Njg0NDUsImV4cCI6MTc3MTY1NDg0NX0.g_aufib5offWLjqx7ndvjj6u70XqsHKU48s2L_rcPbM"}`,
+    Authorization: `Bearer ${localStorage.getItem("jwt_token") || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwiZW1haWwiOiJzYWhlYmJjYTIwMjBAZ21haWwuY29tIiwibWV0YUJ1c2luZXNzQWNjb3VudElkIjpudWxsLCJpYXQiOjE3NzE4NDExNjEsImV4cCI6MTc3MTkyNzU2MX0.YgNxmJND-OAWMlf1FHzNsSjyvT1-g-BgE9wo1jhRiEs"}`,
     "x-organization-id":
       localStorage.getItem("organization_id") || "org_demo_001",
     "x-meta-business-account-id":
