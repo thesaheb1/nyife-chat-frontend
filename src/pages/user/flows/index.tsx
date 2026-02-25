@@ -42,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { FlowScreenPreview } from "@/components/flows/FlowTemplateForm";
 
 import {
   cloneFlow,
@@ -68,6 +69,7 @@ export default function FlowsPage() {
 
   const [previewFlow, setPreviewFlow] = useState<FlowTemplate | null>(null);
   const [previewScreenKey, setPreviewScreenKey] = useState("");
+  const [previewHistory, setPreviewHistory] = useState<string[]>([]);
 
   const [cloneTarget, setCloneTarget] = useState<FlowTemplate | null>(null);
   const [cloneName, setCloneName] = useState("");
@@ -169,10 +171,31 @@ export default function FlowsPage() {
 
   useEffect(() => {
     if (!previewFlow) return;
-    setPreviewScreenKey(
-      previewFlow.screens.find((s) => s.is_entry_point)?.key || previewFlow.screens[0]?.key || ""
-    );
+    const startKey = previewFlow.screens.find((s) => s.is_entry_point)?.key || previewFlow.screens[0]?.key || "";
+    setPreviewScreenKey(startKey);
+    setPreviewHistory(startKey ? [startKey] : []);
   }, [previewFlow]);
+
+  const handlePreviewBack = () => {
+    setPreviewHistory((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.slice(0, -1);
+      const target = next[next.length - 1];
+      if (target) setPreviewScreenKey(target);
+      return next;
+    });
+  };
+
+  const handlePreviewNavigate = (action: FlowTemplate["screens"][number]["actions"][number]) => {
+    if (action.type === "previous_screen") {
+      handlePreviewBack();
+      return;
+    }
+    if (action.type === "next_screen" && action.target_screen_key) {
+      setPreviewScreenKey(action.target_screen_key);
+      setPreviewHistory((prev) => [...prev, action.target_screen_key as string]);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -339,7 +362,15 @@ export default function FlowsPage() {
         </div>
       </div>
 
-      <Dialog open={Boolean(previewFlow)} onOpenChange={(open) => !open && setPreviewFlow(null)}>
+      <Dialog
+        open={Boolean(previewFlow)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewFlow(null);
+            setPreviewHistory([]);
+          }
+        }}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>{previewFlow?.name}</DialogTitle>
@@ -369,34 +400,15 @@ export default function FlowsPage() {
               </div>
 
               <div className="rounded-lg border border-border p-3">
-                <p className="text-sm font-semibold">{previewScreen?.title}</p>
-                <p className="mb-3 text-xs text-muted-foreground font-mono">{previewScreen?.key}</p>
-
-                <div className="space-y-2">
-                  {previewScreen?.components.map((component) => (
-                    <div key={component.key} className="rounded-md border border-border bg-muted/20 p-2">
-                      <p className="text-xs font-medium">{component.label || component.key}</p>
-                      <p className="text-[11px] text-muted-foreground">{component.type}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {previewScreen?.actions.map((action) => {
-                    const canGo = action.type === "next_screen" && action.target_screen_key;
-                    return (
-                      <Button
-                        key={action.key}
-                        type="button"
-                        variant={canGo ? "default" : "outline"}
-                        className="w-full justify-between"
-                        onClick={() => canGo && setPreviewScreenKey(action.target_screen_key || "")}
-                      >
-                        <span>{action.label || action.type}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
+                <FlowScreenPreview
+                  flowName={previewFlow.name || "Business"}
+                  category={previewFlow.category}
+                  screen={previewScreen}
+                  onNavigate={handlePreviewNavigate}
+                  canGoBack={previewHistory.length > 1}
+                  onHeaderBack={handlePreviewBack}
+                  availableScreenKeys={new Set((previewFlow.screens || []).map((s) => s.key))}
+                />
               </div>
             </div>
           )}

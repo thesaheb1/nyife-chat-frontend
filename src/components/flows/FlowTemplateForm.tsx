@@ -39,6 +39,7 @@ import {
   FLOW_CATEGORIES,
   FLOW_COMPONENT_TYPES,
   type CreateFlowPayload,
+  type FlowScreen,
   type FlowCategory,
   type FlowActionType,
   type FlowComponentType,
@@ -1419,7 +1420,11 @@ function ScreenEditor({
   );
 }
 
-function FlowScreenPreview({
+type PreviewFlowScreen = Omit<FlowScreen, "components"> & {
+  components: Array<FlowScreen["components"][number] & { options_text?: string }>;
+};
+
+export function FlowScreenPreview({
   flowName,
   category,
   screen,
@@ -1430,8 +1435,8 @@ function FlowScreenPreview({
 }: {
   flowName: string;
   category: FlowCategory;
-  screen?: FlowTemplateFormValues["screens"][number];
-  onNavigate: (action: FlowTemplateFormValues["screens"][number]["actions"][number]) => void;
+  screen?: PreviewFlowScreen;
+  onNavigate: (action: FlowScreen["actions"][number]) => void;
   canGoBack: boolean;
   onHeaderBack: () => void;
   availableScreenKeys: Set<string>;
@@ -1469,7 +1474,7 @@ function FlowScreenPreview({
     return Array.isArray(val) ? val : [];
   };
 
-  const runAction = (action: FlowTemplateFormValues["screens"][number]["actions"][number]) => {
+  const runAction = (action: FlowScreen["actions"][number]) => {
     const targetExists = action.target_screen_key && availableScreenKeys.has(action.target_screen_key);
     const canNavigate = action.type === "previous_screen" || (action.type === "next_screen" && targetExists);
 
@@ -1550,7 +1555,7 @@ function FlowScreenPreview({
             }
 
             if (component.type === "radio") {
-              const options = parseOptions(component.options_text);
+              const options = component.options?.length ? component.options : parseOptions(component.options_text);
               const selected = getStringValue(component.variable_key);
               return (
                 <div key={component.key} className="space-y-2">
@@ -1577,7 +1582,7 @@ function FlowScreenPreview({
             }
 
             if (component.type === "checkbox") {
-              const options = parseOptions(component.options_text);
+              const options = component.options?.length ? component.options : parseOptions(component.options_text);
               const selected = getArrayValue(component.variable_key);
               return (
                 <div key={component.key} className="space-y-2">
@@ -1609,7 +1614,7 @@ function FlowScreenPreview({
             }
 
             if (component.type === "select") {
-              const options = parseOptions(component.options_text);
+              const options = component.options?.length ? component.options : parseOptions(component.options_text);
               return (
                 <div key={component.key} className="space-y-1.5">
                   <p className="text-[13px] font-semibold text-[#111827]">
