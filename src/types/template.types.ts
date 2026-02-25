@@ -105,3 +105,32 @@ export interface ApiResponse<T> {
   message?: string;
   success?: boolean;
 }
+
+export interface TemplateValidationIssue {
+  field?: string;
+  message: string;
+}
+
+export interface TemplateValidationResult {
+  valid: boolean;
+  errors?: TemplateValidationIssue[];
+}
+
+export interface TemplateCapabilities {
+  maxBodyLength?: number;
+  maxHeaderTextLength?: number;
+  maxFooterLength?: number;
+  maxButtonTextLength?: number;
+  maxButtons?: number;
+  maxCarouselCards?: number;
+  maxQuickReplyButtons?: number;
+  maxUrlButtons?: number;
+  maxPhoneButtons?: number;
+}
+
+export interface FlowListItem {
+  id: string;
+  flowId?: string;
+  name: string;
+  status?: string;
+}

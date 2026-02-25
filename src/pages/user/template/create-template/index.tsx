@@ -1,28 +1,47 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TemplateForm from "@/components/templates/TemplateForm";
-import { createTemplate } from "@/services/template.service";
+import { createTemplate, validateTemplatePayload } from "@/services/template.service";
 import type { TemplateFormValues } from "@/components/templates/TemplateForm";
 import type { TemplateComponent } from "@/types/template.types";
 
 export default function CreateTemplatePage() {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
+
+  const createTemplateMutation = useMutation({
+    mutationFn: async ({
+      values,
+      components,
+    }: {
+      values: TemplateFormValues;
+      components: TemplateComponent[];
+    }) => {
+      const payload = {
+        name: values.name,
+        category: values.category,
+        language: values.language,
+        components,
+      };
+
+      const validation = await validateTemplatePayload(payload);
+      const result = validation?.data;
+      if (result?.valid === false) {
+        const firstIssue = result.errors?.[0]?.message || "Template payload failed validation.";
+        throw new Error(firstIssue);
+      }
+
+      return createTemplate(payload);
+    },
+  });
 
   const handleSubmit = async (
     values: TemplateFormValues,
     components: TemplateComponent[]
   ) => {
-    setIsLoading(true);
     const toastId = toast.loading("Submitting template to Meta for approval…");
     try {
-      await createTemplate({
-        name: values.name,
-        category: values.category,
-        language: values.language,
-        components,
-      });
+      await createTemplateMutation.mutateAsync({ values, components });
       toast.success(
         "Template submitted! Meta usually approves within a few minutes.",
         { id: toastId }
@@ -30,15 +49,13 @@ export default function CreateTemplatePage() {
       navigate("/templates");
     } catch (err: any) {
       toast.error(err?.message || "Failed to create template", { id: toastId });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   return (
     <div className="flex flex-col h-full">
       {/* Page header */}
-      <div className="border-b border-border bg-background px-6 py-4">
+      <div className="border-b border-border bg-background px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/templates")}
@@ -57,7 +74,7 @@ export default function CreateTemplatePage() {
         </div>
 
         {/* Process steps */}
-        <div className="flex items-center gap-0 mt-4 overflow-x-auto pb-1">
+        <div className="mt-4 flex flex-wrap items-center gap-2 pb-1">
           {[
             { n: "1", label: "Choose template type" },
             { n: "2", label: "Build your content" },
@@ -82,10 +99,10 @@ export default function CreateTemplatePage() {
       </div>
 
       {/* Form */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
         <TemplateForm
           onSubmit={handleSubmit}
-          isLoading={isLoading}
+          isLoading={createTemplateMutation.isPending}
           submitLabel="Submit for Approval"
           onCancel={() => navigate("/templates")}
         />

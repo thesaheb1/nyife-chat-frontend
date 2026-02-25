@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import TemplateForm from "@/components/templates/TemplateForm";
 import TemplateStatusBadge from "@/components/templates/TemplateStatusBadge";
-import { getTemplate, updateTemplate } from "@/services/template.service";
+import { getTemplate, updateTemplate, validateTemplatePayload } from "@/services/template.service";
 import type { Template, TemplateComponent } from "@/types/template.types";
 import type { TemplateFormValues } from "@/components/templates/TemplateForm";
 import type { TemplateTypeId } from "@/components/templates/TemplateTypeSelector";
@@ -27,38 +27,64 @@ export default function UpdateTemplatePage() {
   const navigate = useNavigate();
   const { uuid } = useParams<{ uuid: string }>();
 
-  const [template, setTemplate] = useState<Template | null>(null);
-  const [isLoadingTemplate, setIsLoadingTemplate] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const {
+    data: template,
+    isLoading: isLoadingTemplate,
+    error: loadError,
+  } = useQuery<Template>({
+    queryKey: ["template", uuid],
+    enabled: Boolean(uuid),
+    queryFn: async () => {
+      if (!uuid) {
+        throw new Error("Template ID is missing.");
+      }
+      const res = await getTemplate(uuid);
+      const t = (res?.data as any)?.template ?? (res?.data as unknown as Template);
+      return t;
+    },
+  });
 
-  useEffect(() => {
-    if (!uuid) return;
-    setIsLoadingTemplate(true);
-    getTemplate(uuid)
-      .then((res) => {
-        const t = (res?.data as any)?.template ?? (res?.data as unknown as Template);
-        setTemplate(t);
-      })
-      .catch((err) => setLoadError(err?.message || "Failed to load template"))
-      .finally(() => setIsLoadingTemplate(false));
-  }, [uuid]);
+  const updateTemplateMutation = useMutation({
+    mutationFn: async ({
+      values,
+      components,
+    }: {
+      values: TemplateFormValues;
+      components: TemplateComponent[];
+    }) => {
+      if (!uuid) {
+        throw new Error("Template ID is missing.");
+      }
+
+      const validationPayload = {
+        name: values.name,
+        category: values.category,
+        language: values.language,
+        components,
+      };
+
+      const validation = await validateTemplatePayload(validationPayload);
+      const result = validation?.data;
+      if (result?.valid === false) {
+        const firstIssue = result.errors?.[0]?.message || "Template payload failed validation.";
+        throw new Error(firstIssue);
+      }
+
+      return updateTemplate(uuid, { category: values.category, components });
+    },
+  });
 
   const handleSubmit = async (
     values: TemplateFormValues,
     components: TemplateComponent[]
   ) => {
-    if (!uuid) return;
-    setIsSaving(true);
     const toastId = toast.loading("Saving changes…");
     try {
-      await updateTemplate(uuid, { category: values.category, components });
+      await updateTemplateMutation.mutateAsync({ values, components });
       toast.success("Template updated successfully!", { id: toastId });
       navigate("/templates");
     } catch (err: any) {
       toast.error(err?.message || "Failed to update template", { id: toastId });
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -79,6 +105,8 @@ export default function UpdateTemplatePage() {
         phone_number: b.phone_number,
         otp_type: b.otp_type,
         flow_id: b.flow_id,
+        flow_action: b.flow_action,
+        navigate_screen: b.navigate_screen,
       })),
       carousel_cards_json: c.cards ? JSON.stringify(c.cards) : undefined,
     })) as TemplateFormValues["components"],
@@ -89,7 +117,7 @@ export default function UpdateTemplatePage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="border-b border-border bg-background px-6 py-4">
+      <div className="border-b border-border bg-background px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate("/templates")}
@@ -116,7 +144,7 @@ export default function UpdateTemplatePage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
         {isLoadingTemplate ? (
           <div className="max-w-3xl space-y-4">
             <Skeleton className="h-16 w-full rounded-xl" />
@@ -127,7 +155,7 @@ export default function UpdateTemplatePage() {
         ) : loadError ? (
           <Alert variant="destructive" className="max-w-lg">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{loadError}</AlertDescription>
+            <AlertDescription>{(loadError as Error)?.message || "Failed to load template"}</AlertDescription>
           </Alert>
         ) : template ? (
           <>
@@ -150,7 +178,7 @@ export default function UpdateTemplatePage() {
               defaultValues={buildDefaultValues(template)}
               defaultTypeId={typeId}
               onSubmit={handleSubmit}
-              isLoading={isSaving}
+              isLoading={updateTemplateMutation.isPending}
               submitLabel="Save Changes"
               isUpdate={true}
               onCancel={() => navigate("/templates")}

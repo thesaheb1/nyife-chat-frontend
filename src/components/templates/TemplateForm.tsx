@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   Plus,
@@ -62,6 +63,8 @@ import TemplateTypeSelector, {
 import type { TemplateComponent } from "@/types/template.types";
 import type { UseFormReturn } from "react-hook-form";
 import type { TemplateButton } from "@/types/template.types";
+import { getTemplateCapabilities, listFlows } from "@/services/template.service";
+import type { FlowListItem, TemplateCapabilities } from "@/types/template.types";
 
 // ─────────────────────────────────────────────────────────────
 // ZOD SCHEMA
@@ -70,6 +73,19 @@ const MAX_BODY = 1024;
 const MAX_HEADER_TEXT = 60;
 const MAX_FOOTER = 60;
 const MAX_BUTTON_TEXT = 25;
+const MAX_BUTTONS = 10;
+const MAX_CAROUSEL_CARDS = 10;
+const MIN_CAROUSEL_CARDS = 2;
+
+const getVariables = (input?: string): number[] => {
+  if (!input) return [];
+  return [...input.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+};
+
+const hasSequentialVariables = (input?: string): boolean => {
+  const unique = [...new Set(getVariables(input))].sort((a, b) => a - b);
+  return unique.every((value, index) => value === index + 1);
+};
 
 const buttonSchema = z
   .object({
@@ -82,6 +98,8 @@ const buttonSchema = z
     phone_number: z.string().optional(),
     otp_type: z.enum(["COPY_CODE", "ONE_TAP", "ZERO_TAP"]).optional(),
     flow_id: z.string().optional(),
+    flow_action: z.enum(["navigate", "data_exchange"]).optional(),
+    navigate_screen: z.string().optional(),
   })
   .superRefine((btn, ctx) => {
     if (btn.type === "URL") {
@@ -90,6 +108,9 @@ const buttonSchema = z
       } else {
         try {
           new URL(btn.url);
+          if (!hasSequentialVariables(btn.url)) {
+            ctx.addIssue({ code: "custom", path: ["url"], message: "URL variables must be sequential, e.g. {{1}}, {{2}}" });
+          }
         } catch {
           ctx.addIssue({ code: "custom", path: ["url"], message: "Must be a valid URL (e.g. https://example.com)" });
         }
@@ -105,6 +126,12 @@ const buttonSchema = z
     if (btn.type === "FLOW") {
       if (!btn.flow_id || btn.flow_id.trim() === "") {
         ctx.addIssue({ code: "custom", path: ["flow_id"], message: "Flow ID is required — get this from your Flows section" });
+      }
+      if (!btn.flow_action) {
+        ctx.addIssue({ code: "custom", path: ["flow_action"], message: "Flow action is required" });
+      }
+      if (btn.flow_action === "navigate" && (!btn.navigate_screen || btn.navigate_screen.trim() === "")) {
+        ctx.addIssue({ code: "custom", path: ["navigate_screen"], message: "Navigate screen is required when flow action is navigate" });
       }
     }
   });
@@ -137,6 +164,8 @@ export const templateFormSchema = z
   .superRefine((data, ctx) => {
     const body = data.components.find((c) => c.type === "BODY");
     const header = data.components.find((c) => c.type === "HEADER");
+    const buttons = data.components.find((c) => c.type === "BUTTONS")?.buttons || [];
+    const carousel = data.components.find((c) => c.type === "CAROUSEL");
 
     // Body is required unless authentication
     if (data.category !== "AUTHENTICATION") {
@@ -151,6 +180,24 @@ export const templateFormSchema = z
           code: "custom",
           path: ["components"],
           message: `Body text is too long (${body.text.length}/${MAX_BODY} characters)`,
+        });
+      }
+    }
+
+    if (data.category === "AUTHENTICATION") {
+      if (!body) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication templates must include a BODY component.",
+        });
+      }
+      const authButtons = buttons.filter((b) => b.type === "OTP");
+      if (authButtons.length !== 1 || buttons.length !== 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication templates must have exactly one OTP button.",
         });
       }
     }
@@ -177,6 +224,77 @@ export const templateFormSchema = z
           });
           break;
         }
+      }
+    }
+
+    if (buttons.length > MAX_BUTTONS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["components"],
+        message: `Too many buttons. Maximum allowed is ${MAX_BUTTONS}.`,
+      });
+    }
+
+    const flowButtons = buttons.filter((b) => b.type === "FLOW");
+    if (flowButtons.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["components"],
+        message: "Only one FLOW button is allowed in a template.",
+      });
+    }
+
+    if (carousel?.carousel_cards_json) {
+      try {
+        const cards = JSON.parse(carousel.carousel_cards_json) as Array<{ components?: TemplateComponent[] }>;
+        if (!Array.isArray(cards) || cards.length < MIN_CAROUSEL_CARDS || cards.length > MAX_CAROUSEL_CARDS) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["components"],
+            message: `Carousel must include between ${MIN_CAROUSEL_CARDS} and ${MAX_CAROUSEL_CARDS} cards.`,
+          });
+        }
+
+        cards.forEach((card, cardIndex) => {
+          const cardComponents = card.components || [];
+          const cardHeader = cardComponents.find((c) => c.type === "HEADER");
+          const cardBody = cardComponents.find((c) => c.type === "BODY");
+          const cardButtons = cardComponents.find((c) => c.type === "BUTTONS")?.buttons || [];
+
+          if (!cardHeader || !["IMAGE", "VIDEO"].includes(cardHeader.format || "")) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["components"],
+              message: `Card ${cardIndex + 1}: header must be IMAGE or VIDEO.`,
+            });
+          }
+          if (!cardBody?.text?.trim()) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["components"],
+              message: `Card ${cardIndex + 1}: body text is required.`,
+            });
+          } else if (!hasSequentialVariables(cardBody.text)) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["components"],
+              message: `Card ${cardIndex + 1}: variables must be sequential starting from {{1}}.`,
+            });
+          }
+          if (!cardButtons.length) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["components"],
+              message: `Card ${cardIndex + 1}: at least one button is required.`,
+            });
+          }
+        });
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Invalid carousel card JSON structure.",
+        });
       }
     }
   });
@@ -292,7 +410,7 @@ const SAMPLES: Record<TemplateTypeId, Partial<TemplateFormValues>> = {
       },
       {
         type: "BUTTONS",
-        buttons: [{ type: "FLOW", text: "Fill Out Form", flow_id: "" }],
+        buttons: [{ type: "FLOW", text: "Fill Out Form", flow_id: "", flow_action: "navigate", navigate_screen: "FIRST_ENTRY_SCREEN" }],
       },
     ],
   },
@@ -497,9 +615,36 @@ export default function TemplateForm({
     name: "components",
   });
 
+  const { data: capabilitiesData } = useQuery({
+    queryKey: ["template-capabilities"],
+    queryFn: getTemplateCapabilities,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: flowListData, isLoading: isLoadingFlows } = useQuery({
+    queryKey: ["published-flows"],
+    queryFn: async () => {
+      const res = await listFlows("PUBLISHED", 100, 0);
+      const source = (res?.data ?? []) as unknown;
+      if (Array.isArray(source)) return source as FlowListItem[];
+      const nested = (source as { rows?: FlowListItem[]; data?: FlowListItem[] }) || {};
+      return nested.rows || nested.data || [];
+    },
+    staleTime: 60 * 1000,
+  });
+
+
+
+
   const watchedComponents = form.watch("components");
   const watchedCategory = form.watch("category");
   const watchedName = form.watch("name");
+  const capabilities = capabilitiesData?.data as TemplateCapabilities | undefined;
+  const maxButtonCount = capabilities?.maxButtons ?? MAX_BUTTONS;
+  const maxBodyLength = capabilities?.maxBodyLength ?? MAX_BODY;
+  const maxHeaderTextLength = capabilities?.maxHeaderTextLength ?? MAX_HEADER_TEXT;
+  const maxFooterLength = capabilities?.maxFooterLength ?? MAX_FOOTER;
+  const maxButtonTextLength = capabilities?.maxButtonTextLength ?? MAX_BUTTON_TEXT;
 
   // When a type is confirmed, reset form to sample defaults
   const handleTypeConfirm = () => {
@@ -543,6 +688,8 @@ export default function TemplateForm({
           phone_number: b.phone_number,
           otp_type: b.otp_type as TemplateButton["otp_type"],
           flow_id: b.flow_id,
+          flow_action: b.flow_action,
+          navigate_screen: b.navigate_screen,
         }));
       }
       if (c.carousel_cards_json) {
@@ -597,6 +744,22 @@ export default function TemplateForm({
       const comp: TemplateComponent = { type: c.type as TemplateComponent["type"] };
       if (c.format) comp.format = c.format as TemplateComponent["format"];
       if (c.text) comp.text = c.text;
+      if (c.type === "BODY" && c.text && hasSequentialVariables(c.text) && getVariables(c.text).length > 0) {
+        const maxVar = Math.max(...getVariables(c.text));
+        const exampleValues = Array.from({ length: maxVar }, (_, idx) => previewVars[String(idx + 1)]?.trim() || `sample_${idx + 1}`);
+        comp.example = {
+          ...(comp.example ?? {}),
+          body_text: [exampleValues],
+        };
+      }
+      if (c.type === "HEADER" && c.format === "TEXT" && c.text && hasSequentialVariables(c.text) && getVariables(c.text).length > 0) {
+        const maxVar = Math.max(...getVariables(c.text));
+        const headerValues = Array.from({ length: maxVar }, (_, idx) => previewVars[String(idx + 1)]?.trim() || `sample_${idx + 1}`);
+        comp.example = {
+          ...(comp.example ?? {}),
+          header_text: headerValues,
+        };
+      }
       if (c.add_security_recommendation) comp.add_security_recommendation = true;
       if (c.buttons?.length) {
         comp.buttons = c.buttons.map((b) => ({
@@ -606,6 +769,8 @@ export default function TemplateForm({
           ...(b.phone_number ? { phone_number: b.phone_number } : {}),
           ...(b.otp_type ? { otp_type: b.otp_type as TemplateButton["otp_type"] } : {}),
           ...(b.flow_id ? { flow_id: b.flow_id } : {}),
+          ...(b.flow_action ? { flow_action: b.flow_action } : {}),
+          ...(b.navigate_screen ? { navigate_screen: b.navigate_screen } : {}),
         }));
       }
       if (c.header_handle && !c.header_handle.startsWith("LOCAL:")) {
@@ -702,7 +867,7 @@ export default function TemplateForm({
 
         <form
           onSubmit={form.handleSubmit(handleFormSubmit)}
-          className="flex gap-6"
+          className="flex flex-col gap-6 xl:flex-row"
         >
           {/* ── LEFT: Form ── */}
           <div className="flex-1 min-w-0 space-y-5 pb-10">
@@ -855,6 +1020,13 @@ export default function TemplateForm({
                 handleMediaUpload={handleMediaUpload}
                 clearMedia={clearMedia}
                 selectedType={selectedType}
+                availableFlows={flowListData ?? []}
+                isLoadingFlows={isLoadingFlows}
+                maxBodyLength={maxBodyLength}
+                maxHeaderTextLength={maxHeaderTextLength}
+                maxFooterLength={maxFooterLength}
+                maxButtonTextLength={maxButtonTextLength}
+                maxButtons={maxButtonCount}
               />
             )}
 
@@ -937,7 +1109,7 @@ export default function TemplateForm({
           </div>
 
           {/* ── RIGHT: Live Preview ── */}
-          <div className="w-[310px] flex-shrink-0 hidden lg:block">
+          <div className="w-[310px] flex-shrink-0 hidden xl:block">
             <div className="sticky top-0 pt-1">
               <WhatsAppPreview
                 name={watchedName || typeInfo?.label || "Business"}
@@ -1080,9 +1252,15 @@ function CarouselSection({ form }: { form: UseFormReturn<TemplateFormValues> }) 
           buttonText: c.components?.find((x: any) => x.type === "BUTTONS")?.buttons?.[0]?.text || "",
           buttonUrl: c.components?.find((x: any) => x.type === "BUTTONS")?.buttons?.[0]?.url || "",
         }))
-        : [{ bodyText: "", buttonText: "", buttonUrl: "" }];
+        : [
+            { bodyText: "", buttonText: "", buttonUrl: "" },
+            { bodyText: "", buttonText: "", buttonUrl: "" },
+          ];
     } catch {
-      return [{ bodyText: "", buttonText: "", buttonUrl: "" }];
+      return [
+        { bodyText: "", buttonText: "", buttonUrl: "" },
+        { bodyText: "", buttonText: "", buttonUrl: "" },
+      ];
     }
   });
 
@@ -1114,14 +1292,14 @@ function CarouselSection({ form }: { form: UseFormReturn<TemplateFormValues> }) 
   };
 
   const addCard = () => {
-    if (cards.length >= 10) return;
+    if (cards.length >= MAX_CAROUSEL_CARDS) return;
     const next = [...cards, { bodyText: "", buttonText: "", buttonUrl: "" }];
     setCards(next);
     syncCards(next);
   };
 
   const removeCard = (i: number) => {
-    if (cards.length <= 1) return;
+    if (cards.length <= MIN_CAROUSEL_CARDS) return;
     const next = cards.filter((_, idx) => idx !== i);
     setCards(next);
     syncCards(next);
@@ -1172,7 +1350,7 @@ function CarouselSection({ form }: { form: UseFormReturn<TemplateFormValues> }) 
                 <span className="text-xs font-semibold text-muted-foreground">
                   Card {i + 1}
                 </span>
-                {cards.length > 1 && (
+                {cards.length > MIN_CAROUSEL_CARDS && (
                   <Button
                     type="button"
                     variant="ghost"
@@ -1265,6 +1443,13 @@ interface StandardSectionsProps {
   handleMediaUpload: (i: number, format: string) => void;
   clearMedia: (i: number) => void;
   selectedType: TemplateTypeId | null;
+  availableFlows: FlowListItem[];
+  isLoadingFlows: boolean;
+  maxBodyLength: number;
+  maxHeaderTextLength: number;
+  maxFooterLength: number;
+  maxButtonTextLength: number;
+  maxButtons: number;
 }
 
 function StandardSections({
@@ -1276,6 +1461,13 @@ function StandardSections({
   handleMediaUpload,
   clearMedia,
   selectedType,
+  availableFlows,
+  isLoadingFlows,
+  maxBodyLength,
+  maxHeaderTextLength,
+  maxFooterLength,
+  maxButtonTextLength,
+  maxButtons,
 }: StandardSectionsProps) {
   const watchedComponents = form.watch("components");
   const watchedCategory = form.watch("category");
@@ -1296,6 +1488,7 @@ function StandardSections({
         <HeaderSectionCard
           form={form}
           index={headerIdx}
+          maxHeaderTextLength={maxHeaderTextLength}
           mediaPreview={mediaPreviews[headerIdx]}
           onUpload={(fmt) => handleMediaUpload(headerIdx, fmt)}
           onClearMedia={() => clearMedia(headerIdx)}
@@ -1308,6 +1501,7 @@ function StandardSections({
         <BodySectionCard
           form={form}
           index={bodyIdx}
+          maxBodyLength={maxBodyLength}
         />
       )}
 
@@ -1316,6 +1510,7 @@ function StandardSections({
         <FooterSectionCard
           form={form}
           index={footerIdx}
+          maxFooterLength={maxFooterLength}
           onRemove={() => remove(footerIdx)}
         />
       )}
@@ -1327,6 +1522,10 @@ function StandardSections({
           index={buttonsIdx}
           category={watchedCategory}
           selectedType={selectedType}
+          maxButtonTextLength={maxButtonTextLength}
+          maxButtons={maxButtons}
+          availableFlows={availableFlows}
+          isLoadingFlows={isLoadingFlows}
           onRemove={() => remove(buttonsIdx)}
         />
       )}
@@ -1342,7 +1541,7 @@ function StandardSections({
               const config = {
                 HEADER: { icon: <ImageIcon className="w-3.5 h-3.5" />, label: "Header", hint: "Add an image, video or text above your message", defaultVal: { type: "HEADER" as const, format: "TEXT" as const, text: "" } },
                 FOOTER: { icon: <MessageCircle className="w-3.5 h-3.5" />, label: "Footer", hint: "Add small disclaimer text below your message", defaultVal: { type: "FOOTER" as const, text: "" } },
-                BUTTONS: { icon: <Zap className="w-3.5 h-3.5" />, label: "Buttons", hint: "Add up to 3 action buttons", defaultVal: { type: "BUTTONS" as const, buttons: [{ type: "QUICK_REPLY" as const, text: "" }] } },
+                BUTTONS: { icon: <Zap className="w-3.5 h-3.5" />, label: "Buttons", hint: "Add action buttons", defaultVal: { type: "BUTTONS" as const, buttons: [{ type: "QUICK_REPLY" as const, text: "" }] } },
               }[type]!;
               return (
                 <Tooltip key={type}>
@@ -1375,6 +1574,7 @@ function StandardSections({
 function HeaderSectionCard({
   form,
   index,
+  maxHeaderTextLength,
   mediaPreview,
   onUpload,
   onClearMedia,
@@ -1382,6 +1582,7 @@ function HeaderSectionCard({
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
+  maxHeaderTextLength: number;
   mediaPreview?: MediaState;
   onUpload: (format: string) => void;
   onClearMedia: () => void;
@@ -1450,14 +1651,14 @@ function HeaderSectionCard({
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">Header Text</Label>
-            <CharCount value={text} max={MAX_HEADER_TEXT} />
+            <CharCount value={text} max={maxHeaderTextLength} />
           </div>
           <Input
             {...form.register(`components.${index}.text`)}
             placeholder='e.g. "🚀 Your Order Shipped!"'
-            maxLength={MAX_HEADER_TEXT}
+            maxLength={maxHeaderTextLength}
           />
-          <FieldHint>Keep it short and impactful. Max {MAX_HEADER_TEXT} characters.</FieldHint>
+          <FieldHint>Keep it short and impactful. Max {maxHeaderTextLength} characters.</FieldHint>
         </div>
       )}
 
@@ -1540,9 +1741,11 @@ function HeaderSectionCard({
 function BodySectionCard({
   form,
   index,
+  maxBodyLength,
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
+  maxBodyLength: number;
 }) {
   const text = form.watch(`components.${index}.text`) || "";
   const [showVariableHelp, setShowVariableHelp] = useState(false);
@@ -1574,7 +1777,7 @@ function BodySectionCard({
               <Info className="w-3 h-3" /> Variable help
             </button>
           </div>
-          <CharCount value={text} max={MAX_BODY} />
+          <CharCount value={text} max={maxBodyLength} />
         </div>
 
         {showVariableHelp && (
@@ -1596,7 +1799,7 @@ function BodySectionCard({
             }
             rows={6}
             className="resize-none text-sm pr-2 pb-8"
-            maxLength={MAX_BODY}
+            maxLength={maxBodyLength}
           />
           {/* Bottom bar inside textarea */}
           <div className="absolute bottom-2 left-0 right-0 px-3 flex items-center justify-between">
@@ -1646,10 +1849,12 @@ function BodySectionCard({
 function FooterSectionCard({
   form,
   index,
+  maxFooterLength,
   onRemove,
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
+  maxFooterLength: number;
   onRemove: () => void;
 }) {
   const text = form.watch(`components.${index}.text`) || "";
@@ -1665,14 +1870,14 @@ function FooterSectionCard({
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label className="text-sm font-medium">Footer Text</Label>
-          <CharCount value={text} max={MAX_FOOTER} />
+          <CharCount value={text} max={maxFooterLength} />
         </div>
         <Input
           {...form.register(`components.${index}.text`)}
           placeholder='e.g. "Reply STOP to unsubscribe"'
-          maxLength={MAX_FOOTER}
+          maxLength={maxFooterLength}
         />
-        <FieldHint>Shown in grey below the body. Typically used for opt-out instructions or legal disclaimers. Max {MAX_FOOTER} characters.</FieldHint>
+        <FieldHint>Shown in grey below the body. Typically used for opt-out instructions or legal disclaimers. Max {maxFooterLength} characters.</FieldHint>
       </div>
     </SectionCard>
   );
@@ -1686,20 +1891,33 @@ function ButtonsSectionCard({
   index,
   category,
   selectedType,
+  maxButtonTextLength,
+  maxButtons,
+  availableFlows,
+  isLoadingFlows,
   onRemove,
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
   category: string;
   selectedType: TemplateTypeId | null;
+  maxButtonTextLength: number;
+  maxButtons: number;
+  availableFlows: FlowListItem[];
+  isLoadingFlows: boolean;
   onRemove: () => void;
 }) {
+  type FormButton = NonNullable<TemplateFormValues["components"][number]["buttons"]>[number];
   const buttons = form.watch(`components.${index}.buttons`) || [];
 
   const addButton = (type: TemplateButton["type"]) => {
-    if (buttons.length >= 3) return;
+    if (buttons.length >= maxButtons) return;
     const current = form.getValues(`components.${index}.buttons`) || [];
-    form.setValue(`components.${index}.buttons`, [...current, { type, text: "" }]);
+    const base: FormButton =
+      type === "FLOW"
+        ? { type, text: "", flow_action: "navigate", navigate_screen: "FIRST_ENTRY_SCREEN" }
+        : { type, text: "" };
+    form.setValue(`components.${index}.buttons`, [...current, base]);
   };
 
   const removeButton = (i: number) => {
@@ -1748,7 +1966,7 @@ function ButtonsSectionCard({
 
   return (
     <SectionCard
-      title={`Buttons (${buttons.length}/3)`}
+      title={`Buttons (${buttons.length}/${maxButtons})`}
       subtitle="Action buttons displayed below your message"
       icon={<Zap className="w-3.5 h-3.5 text-amber-500" />}
       optional
@@ -1808,10 +2026,10 @@ function ButtonsSectionCard({
                                 btn.type === "FLOW" ? "e.g. Fill Out Form" :
                                   btn.type === "OTP" ? "e.g. Copy Code" : "Button label"
                         }
-                        maxLength={MAX_BUTTON_TEXT}
+                        maxLength={maxButtonTextLength}
                         className="h-7 text-xs pr-14"
                       />
-                      <CharCount value={btn.text} max={MAX_BUTTON_TEXT} className="absolute right-2 top-1/2 -translate-y-1/2" />
+                      <CharCount value={btn.text} max={maxButtonTextLength} className="absolute right-2 top-1/2 -translate-y-1/2" />
                     </div>
                     <FieldError message={btnErrors?.text?.message} />
                   </div>
@@ -1870,18 +2088,64 @@ function ButtonsSectionCard({
 
                 {/* Flow ID */}
                 {btn.type === "FLOW" && (
-                  <div className="flex items-start gap-2">
-                    <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Flow ID</Label>
-                    <div className="flex-1">
-                      <Input
-                        value={btn.flow_id || ""}
-                        onChange={(e) => updateButton(i, "flow_id", e.target.value)}
-                        placeholder="e.g. 1234567890 (from your Flows section)"
-                        className="h-7 text-xs font-mono"
-                      />
-                      <FieldError message={btnErrors?.flow_id?.message} />
-                      <FieldHint>Go to the Flows section → copy the Flow ID from there.</FieldHint>
+                  <div className="space-y-2.5">
+                    <div className="flex items-start gap-2">
+                      <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Flow ID</Label>
+                      <div className="flex-1 space-y-1">
+                        <Select value={btn.flow_id || ""} onValueChange={(v) => updateButton(i, "flow_id", v)}>
+                          <SelectTrigger className="h-7 text-xs font-mono">
+                            <SelectValue placeholder={isLoadingFlows ? "Loading flows..." : "Select a published flow"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableFlows.map((flow) => (
+                              <SelectItem key={flow.id} value={flow.flowId || flow.id}>
+                                {flow.name} ({flow.flowId || flow.id})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={btn.flow_id || ""}
+                          onChange={(e) => updateButton(i, "flow_id", e.target.value)}
+                          placeholder="Or paste flow id manually"
+                          className="h-7 text-xs font-mono"
+                        />
+                        <FieldError message={btnErrors?.flow_id?.message} />
+                      </div>
                     </div>
+
+                    <div className="flex items-start gap-2">
+                      <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Action</Label>
+                      <div className="flex-1">
+                        <Select value={btn.flow_action || "navigate"} onValueChange={(v) => updateButton(i, "flow_action", v)}>
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="navigate">Navigate</SelectItem>
+                            <SelectItem value="data_exchange">Data Exchange</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FieldError message={btnErrors?.flow_action?.message} />
+                      </div>
+                    </div>
+
+                    {btn.flow_action === "navigate" && (
+                      <div className="flex items-start gap-2">
+                        <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Screen</Label>
+                        <div className="flex-1">
+                          <Input
+                            value={btn.navigate_screen || ""}
+                            onChange={(e) => updateButton(i, "navigate_screen", e.target.value)}
+                            placeholder="FIRST_ENTRY_SCREEN"
+                            className="h-7 text-xs font-mono"
+                          />
+                          <FieldError message={btnErrors?.navigate_screen?.message} />
+                        </div>
+                      </div>
+                    )}
+
+                    <FieldHint>Select a published flow ID to avoid runtime send failures.</FieldHint>
                   </div>
                 )}
               </div>
@@ -1891,7 +2155,7 @@ function ButtonsSectionCard({
       </div>
 
       {/* Add button pickers */}
-      {buttons.length < 3 && category !== "AUTHENTICATION" && (
+      {buttons.length < maxButtons && category !== "AUTHENTICATION" && (
         <div>
           <p className="text-xs text-muted-foreground mb-2 font-medium">Add a button:</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1911,16 +2175,16 @@ function ButtonsSectionCard({
             })}
           </div>
           <p className="text-[10px] text-muted-foreground mt-1.5">
-            You can mix and match button types. Max 3 buttons total.
+            You can mix and match button types. Max {maxButtons} buttons total.
           </p>
         </div>
       )}
 
-      {buttons.length >= 3 && (
+      {buttons.length >= maxButtons && (
         <Alert className="py-2">
           <AlertCircle className="h-3.5 w-3.5" />
           <AlertDescription className="text-xs">
-            Maximum 3 buttons reached. Remove a button to add a different type.
+            Maximum {maxButtons} buttons reached. Remove a button to add a different type.
           </AlertDescription>
         </Alert>
       )}

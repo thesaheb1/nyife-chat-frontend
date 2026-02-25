@@ -5,6 +5,9 @@ import type {
   ListTemplatesParams,
   ListTemplatesResponse,
   ApiResponse,
+  TemplateValidationResult,
+  TemplateCapabilities,
+  FlowListItem,
 } from "@/types/template.types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3003";
@@ -108,6 +111,43 @@ export async function publishTemplate(
 ): Promise<ApiResponse<unknown>> {
   const res = await fetch(`${BASE_URL}/api/templates/${uuid}/publish`, {
     method: "POST",
+    headers: getHeaders(),
+  });
+  return handleResponse(res);
+}
+
+// ── Validate Template Payload ──────────────────────────────
+export async function validateTemplatePayload(
+  payload: CreateTemplatePayload
+): Promise<ApiResponse<TemplateValidationResult>> {
+  const res = await fetch(`${BASE_URL}/api/templates/validate`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(res);
+}
+
+// ── Get Template Capabilities ──────────────────────────────
+export async function getTemplateCapabilities(): Promise<ApiResponse<TemplateCapabilities>> {
+  const res = await fetch(`${BASE_URL}/api/templates/capabilities`, {
+    headers: getHeaders(),
+  });
+  return handleResponse(res);
+}
+
+// ── List Flows (for FLOW button selection) ────────────────
+export async function listFlows(
+  status = "PUBLISHED",
+  limit = 100,
+  offset = 0
+): Promise<ApiResponse<FlowListItem[]>> {
+  const qs = new URLSearchParams({
+    status,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  const res = await fetch(`${BASE_URL}/flows?${qs}`, {
     headers: getHeaders(),
   });
   return handleResponse(res);
