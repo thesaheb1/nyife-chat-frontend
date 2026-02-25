@@ -3,17 +3,24 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  ArrowUpDown,
-  Copy,
-  Eye,
-  MoreHorizontal,
-  Pencil,
   Plus,
   RefreshCw,
   Search,
   Trash2,
+  Eye,
+  Pencil,
+  MoreHorizontal,
   UploadCloud,
   Ban,
+  Filter,
+  X,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Copy,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +32,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -42,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FlowScreenPreview } from "@/components/flows/FlowTemplateForm";
 
 import {
@@ -53,9 +62,12 @@ import {
   syncFlowStatuses,
   syncFlowStatus,
 } from "@/services/flow.service";
-import type { FlowStatus, FlowTemplate } from "@/types/flow.types";
+import { FLOW_CATEGORIES, type FlowCategory, type FlowStatus, type FlowTemplate } from "@/types/flow.types";
 
 const PAGE_SIZES = [10, 20, 50];
+
+type SortField = "name" | "category" | "status" | "createdAt";
+type SortDir = "asc" | "desc";
 
 export default function FlowsPage() {
   const navigate = useNavigate();
@@ -63,9 +75,14 @@ export default function FlowsPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [status, setStatus] = useState<FlowStatus | "ALL">("ALL");
-  const [limit, setLimit] = useState(20);
+  const [statusFilter, setStatusFilter] = useState<FlowStatus | "ALL">("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<FlowCategory | "ALL">("ALL");
+
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
+
+  const [sortField, setSortField] = useState<SortField>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [previewFlow, setPreviewFlow] = useState<FlowTemplate | null>(null);
   const [previewScreenKey, setPreviewScreenKey] = useState("");
@@ -78,17 +95,22 @@ export default function FlowsPage() {
   const [deleteTarget, setDeleteTarget] = useState<FlowTemplate | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    const t = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, statusFilter, categoryFilter, pageSize]);
+
   const query = useQuery({
-    queryKey: ["flows", { debouncedSearch, status, limit, page }],
+    queryKey: ["flows", { debouncedSearch, statusFilter, categoryFilter, pageSize, page }],
     queryFn: () =>
       listFlows({
-        limit,
-        offset: page * limit,
-        ...(status !== "ALL" ? { status } : {}),
+        limit: pageSize,
+        offset: page * pageSize,
+        ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
+        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       }),
   });
@@ -158,7 +180,32 @@ export default function FlowsPage() {
 
   const flows = query.data?.data || [];
   const total = query.data?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const hasFilters = statusFilter !== "ALL" || categoryFilter !== "ALL" || debouncedSearch;
+
+  const sortedFlows = useMemo(() => {
+    const list = [...flows];
+    const dir = sortDir === "asc" ? 1 : -1;
+
+    list.sort((a, b) => {
+      const getValue = (item: FlowTemplate) => {
+        if (sortField === "createdAt") {
+          const ts = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+          return Number.isFinite(ts) ? ts : 0;
+        }
+        return String(item[sortField] || "").toLowerCase();
+      };
+
+      const av = getValue(a);
+      const bv = getValue(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    return list;
+  }, [flows, sortField, sortDir]);
 
   const previewScreen = useMemo(() => {
     if (!previewFlow) return undefined;
@@ -197,170 +244,257 @@ export default function FlowsPage() {
     }
   };
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />;
+  }
+
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Flows</h1>
-          <p className="text-sm text-muted-foreground">Create and manage WhatsApp Flow templates.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => syncAllMutation.mutate()} disabled={syncAllMutation.isPending}>
-            <RefreshCw className="mr-2 size-4" />
-            Sync Status
-          </Button>
-          <Button onClick={() => navigate("/flows/create")}> 
-            <Plus className="mr-2 size-4" />
-            Create Flow
-          </Button>
-        </div>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-bold tracking-tight">Flows</h1>
+        <p className="text-sm text-muted-foreground">Manage your WhatsApp Flow templates</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-3 shadow-sm sm:p-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div className="relative sm:col-span-2">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-1 min-w-0 flex-wrap gap-2">
+          <div className="relative min-w-[220px] max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
+              placeholder="Search flows..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search flow by name or key"
-              className="pl-9"
+              className="h-9 pl-8"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <Select value={status} onValueChange={(v) => setStatus(v as FlowStatus | "ALL")}>
-            <SelectTrigger>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as FlowStatus | "ALL")}>
+            <SelectTrigger className="h-9 w-[140px]">
+              <Filter className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Status</SelectItem>
-              <SelectItem value="DRAFT">DRAFT</SelectItem>
-              <SelectItem value="PUBLISHED">PUBLISHED</SelectItem>
-              <SelectItem value="DEPRECATED">DEPRECATED</SelectItem>
-              <SelectItem value="ARCHIVED">ARCHIVED</SelectItem>
+              <SelectItem value="DRAFT">Draft</SelectItem>
+              <SelectItem value="PUBLISHED">Published</SelectItem>
+              <SelectItem value="DEPRECATED">Deprecated</SelectItem>
+              <SelectItem value="ARCHIVED">Archived</SelectItem>
+              <SelectItem value="UNKNOWN">Unknown</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as FlowCategory | "ALL")}>
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Categories</SelectItem>
+              {FLOW_CATEGORIES.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {category.replace(/_/g, " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 gap-1.5 text-xs"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("ALL");
+                setCategoryFilter("ALL");
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          )}
+        </div>
+
+        <div className="flex shrink-0 gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5"
+                onClick={() => syncAllMutation.mutate()}
+                disabled={syncAllMutation.isPending}
+              >
+                <RefreshCw className={`h-4 w-4 ${syncAllMutation.isPending ? "animate-spin" : ""}`} />
+                {syncAllMutation.isPending ? "Syncing..." : "Sync"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Sync flow statuses from Meta</TooltipContent>
+          </Tooltip>
+
+          <Button size="sm" className="h-9 gap-1.5" onClick={() => navigate("/flows/create")}> 
+            <Plus className="h-4 w-4" />
+            New Flow
+          </Button>
         </div>
       </div>
 
+      {!query.isLoading && (
+        <div className="flex gap-4 text-sm text-muted-foreground">
+          <span>
+            <span className="font-semibold text-foreground">{total}</span> {total === 1 ? "flow" : "flows"}
+            {hasFilters && " (filtered)"}
+          </span>
+        </div>
+      )}
+
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <div className="h-full overflow-auto">
-          <table className="w-full min-w-[980px] text-sm">
-            <thead className="sticky top-0 bg-muted/70 backdrop-blur">
-              <tr className="border-b border-border">
-                <th className="px-4 py-3 text-left font-medium">Name</th>
-                <th className="px-4 py-3 text-left font-medium">Template Key</th>
-                <th className="px-4 py-3 text-left font-medium">Category</th>
-                <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-left font-medium">Screens</th>
-                <th className="px-4 py-3 text-right font-medium">
-                  <span className="inline-flex items-center gap-1">
-                    Actions <ArrowUpDown className="size-3.5" />
-                  </span>
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 border-b border-border bg-muted/80 backdrop-blur">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  <button className="flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => handleSort("name")}>
+                    Name <SortIcon field="name" />
+                  </button>
                 </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  <button className="flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => handleSort("category")}>
+                    Category <SortIcon field="category" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Template Key</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  <button className="flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => handleSort("status")}>
+                    Status <SortIcon field="status" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Screens</th>
+                <th className="px-4 py-3 text-left font-medium text-muted-foreground">
+                  <button className="flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => handleSort("createdAt")}>
+                    Created <SortIcon field="createdAt" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {query.isLoading &&
-                Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} className="border-b border-border/60">
-                    <td className="px-4 py-3" colSpan={6}>
-                      <Skeleton className="h-6 w-full" />
-                    </td>
-                  </tr>
-                ))}
 
-              {!query.isLoading && flows.length === 0 && (
+            <tbody className="divide-y divide-border">
+              {query.isLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <td key={j} className="px-4 py-3">
+                        <Skeleton className="h-4 w-full" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : sortedFlows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-center text-muted-foreground" colSpan={6}>
-                    No flows found.
+                  <td colSpan={7} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <FileText className="h-10 w-10 opacity-30" />
+                      <div>
+                        <p className="text-sm font-medium">No flows found</p>
+                        <p className="mt-0.5 text-xs">
+                          {hasFilters ? "Try clearing your filters" : "Create your first flow to get started"}
+                        </p>
+                      </div>
+                      {!hasFilters && (
+                        <Button size="sm" className="mt-1 gap-1.5" onClick={() => navigate("/flows/create")}>
+                          <Plus className="h-4 w-4" /> New Flow
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
+              ) : (
+                sortedFlows.map((flow) => (
+                  <FlowRow
+                    key={flow.id}
+                    flow={flow}
+                    onPreview={() => setPreviewFlow(flow)}
+                    onEdit={() => navigate(`/flows/${flow.id}/update`)}
+                    onPublish={() => publishMutation.mutate(flow.id)}
+                    onRetire={() => retireMutation.mutate(flow.id)}
+                    onSync={() => syncOneMutation.mutate(flow.id)}
+                    onClone={() => {
+                      setCloneTarget(flow);
+                      setCloneName(`${flow.name} Clone`);
+                      setCloneKey(`${flow.template_key}_clone`);
+                    }}
+                    onDelete={() => setDeleteTarget(flow)}
+                  />
+                ))
               )}
-
-              {!query.isLoading &&
-                flows.map((flow) => (
-                  <tr key={flow.id} className="border-b border-border/60 hover:bg-muted/30">
-                    <td className="px-4 py-3">
-                      <div className="font-medium">{flow.name}</div>
-                      {flow.flowId && <div className="text-xs text-muted-foreground">Meta: {flow.flowId}</div>}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs">{flow.template_key}</td>
-                    <td className="px-4 py-3 text-xs">{flow.category?.replace(/_/g, " ")}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">{flow.status || "UNKNOWN"}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-xs">{flow.screens?.length || 0}</td>
-                    <td className="px-4 py-3 text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="size-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setPreviewFlow(flow)}>
-                            <Eye className="mr-2 size-4" /> Preview
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => navigate(`/flows/${flow.id}/update`)}>
-                            <Pencil className="mr-2 size-4" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => publishMutation.mutate(flow.id)}>
-                            <UploadCloud className="mr-2 size-4" /> Publish
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => retireMutation.mutate(flow.id)}>
-                            <Ban className="mr-2 size-4" /> Retire
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => syncOneMutation.mutate(flow.id)}>
-                            <RefreshCw className="mr-2 size-4" /> Sync Status
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setCloneTarget(flow);
-                              setCloneName(`${flow.name} Clone`);
-                              setCloneKey(`${flow.template_key}_clone`);
-                            }}
-                          >
-                            <Copy className="mr-2 size-4" /> Clone
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(flow)}>
-                            <Trash2 className="mr-2 size-4" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </td>
-                  </tr>
-                ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-sm">
-        <div className="text-muted-foreground">{total} flow(s)</div>
-        <div className="flex items-center gap-2">
-          <Select value={String(limit)} onValueChange={(v) => { setLimit(Number(v)); setPage(0); }}>
-            <SelectTrigger className="w-20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" disabled={page <= 0} onClick={() => setPage((p) => p - 1)}>
-            Prev
-          </Button>
-          <span className="text-xs text-muted-foreground">Page {page + 1} / {totalPages}</span>
-          <Button variant="outline" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>
-            Next
-          </Button>
+      {!query.isLoading && total > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span>Rows per page:</span>
+            <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="h-7 w-16 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZES.map((s) => (
+                  <SelectItem key={s} value={String(s)} className="text-xs">
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">
+              {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
+            </span>
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                disabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-7 w-7"
+                disabled={page >= totalPages - 1}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <Dialog
         open={Boolean(previewFlow)}
@@ -387,11 +521,12 @@ export default function FlowsPage() {
                       type="button"
                       key={screen.key}
                       className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
-                        previewScreen?.key === screen.key
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-border"
+                        previewScreen?.key === screen.key ? "border-primary bg-primary/10 text-primary" : "border-border"
                       }`}
-                      onClick={() => setPreviewScreenKey(screen.key)}
+                      onClick={() => {
+                        setPreviewScreenKey(screen.key);
+                        setPreviewHistory([screen.key]);
+                      }}
                     >
                       {screen.title}
                     </button>
@@ -446,11 +581,11 @@ export default function FlowsPage() {
       </Dialog>
 
       <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete Flow</DialogTitle>
             <DialogDescription>
-              This will permanently remove <strong>{deleteTarget?.name}</strong>.
+              Are you sure you want to delete <span className="font-semibold font-mono">{deleteTarget?.name}</span>? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -460,11 +595,151 @@ export default function FlowsPage() {
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
               disabled={deleteMutation.isPending}
             >
-              Delete
+              Delete Flow
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+interface FlowRowProps {
+  flow: FlowTemplate;
+  onPreview: () => void;
+  onEdit: () => void;
+  onPublish: () => void;
+  onRetire: () => void;
+  onSync: () => void;
+  onClone: () => void;
+  onDelete: () => void;
+}
+
+function FlowRow({
+  flow,
+  onPreview,
+  onEdit,
+  onPublish,
+  onRetire,
+  onSync,
+  onClone,
+  onDelete,
+}: FlowRowProps) {
+  const categoryColors: Record<string, string> = {
+    LEAD_GENERATION: "bg-violet-100 text-violet-700 border-violet-200",
+    LEAD_QUALIFICATION: "bg-indigo-100 text-indigo-700 border-indigo-200",
+    APPOINTMENT_BOOKING: "bg-blue-100 text-blue-700 border-blue-200",
+    SLOT_BOOKING: "bg-sky-100 text-sky-700 border-sky-200",
+    ORDER_PLACEMENT: "bg-amber-100 text-amber-700 border-amber-200",
+    RE_ORDERING: "bg-orange-100 text-orange-700 border-orange-200",
+    CUSTOMER_SUPPORT: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    TICKET_CREATION: "bg-teal-100 text-teal-700 border-teal-200",
+    PAYMENTS: "bg-green-100 text-green-700 border-green-200",
+    COLLECTIONS: "bg-lime-100 text-lime-700 border-lime-200",
+    REGISTRATIONS: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    APPLICATIONS: "bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200",
+    DELIVERY_UPDATES: "bg-rose-100 text-rose-700 border-rose-200",
+    ADDRESS_CAPTURE: "bg-pink-100 text-pink-700 border-pink-200",
+    FEEDBACK: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    SURVEYS: "bg-purple-100 text-purple-700 border-purple-200",
+    OTHER: "bg-slate-100 text-slate-700 border-slate-200",
+  };
+
+  return (
+    <tr className="group transition-colors hover:bg-muted/40">
+      <td className="px-4 py-3">
+        <div className="flex flex-col">
+          <button
+            onClick={onPreview}
+            className="text-left font-mono text-xs font-medium text-foreground transition-colors hover:text-primary"
+          >
+            {flow.name}
+          </button>
+          {flow.flowId && <span className="mt-0.5 text-[10px] text-muted-foreground">#{flow.flowId}</span>}
+        </div>
+      </td>
+      <td className="px-4 py-3">
+        <Badge variant="outline" className={`text-xs font-medium ${categoryColors[flow.category] || ""}`}>
+          {flow.category}
+        </Badge>
+      </td>
+      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{flow.template_key}</td>
+      <td className="px-4 py-3">
+        <FlowStatusBadge status={flow.status} />
+      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">{flow.screens?.length || 0}</td>
+      <td className="px-4 py-3 text-xs text-muted-foreground">
+        {flow.createdAt
+          ? new Date(flow.createdAt).toLocaleDateString("en-IN", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })
+          : "-"}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                onClick={onPreview}
+              >
+                <Eye className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Preview</TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="mr-2 h-4 w-4" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onPublish}>
+                <UploadCloud className="mr-2 h-4 w-4" /> Publish
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onRetire}>
+                <Ban className="mr-2 h-4 w-4" /> Retire
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onSync}>
+                <RefreshCw className="mr-2 h-4 w-4" /> Sync Status
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onClone}>
+                <Copy className="mr-2 h-4 w-4" /> Clone
+              </DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+                <Trash2 className="mr-2 h-4 w-4" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function FlowStatusBadge({ status }: { status?: FlowStatus }) {
+  const value = status || "UNKNOWN";
+  const map: Record<string, string> = {
+    DRAFT: "bg-slate-100 text-slate-700 border-slate-200",
+    PUBLISHED: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    DEPRECATED: "bg-amber-100 text-amber-700 border-amber-200",
+    ARCHIVED: "bg-rose-100 text-rose-700 border-rose-200",
+    UNKNOWN: "bg-zinc-100 text-zinc-700 border-zinc-200",
+  };
+
+  return (
+    <Badge variant="outline" className={`text-xs font-medium ${map[value] || map.UNKNOWN}`}>
+      {value}
+    </Badge>
   );
 }
