@@ -16,6 +16,7 @@ import {
 import { auth } from "@/redux/slices/userSlice";
 import { useAppDispatch } from "@/redux/store/hooks";
 import { loginAdmin } from "@/services/auth.service";
+import nyifeLogo from "@/assets/images/nyife-logo.svg";
 
 interface LoginFormState {
   email: string;
@@ -80,7 +81,7 @@ const AdminLoginPage = () => {
     <div className="relative z-10">
       <header className="mb-6 space-y-3 text-center">
         <NavLink to="/" className="mx-auto flex justify-center">
-          <img src="/nyife-icon.svg" alt="NYIFE" className="h-12 w-auto" />
+          <img src={nyifeLogo} alt="NYIFE" className="h-14 w-auto" />
         </NavLink>
         <h1 className="text-2xl font-semibold tracking-tight">Welcome Back</h1>
         <p className="text-sm text-muted-foreground">Sign in to continue.</p>

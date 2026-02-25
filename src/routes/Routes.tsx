@@ -36,7 +36,7 @@ const Routes = () => {
     admin: adminRoutesList,
     user: userRoutesList,
   };
-  
+
   const fullRouteList = roleGroup ? routeListsByRole[roleGroup] : [];
   const userData = userState.data as Record<string, unknown>;
   const subRoleAccessRouteList = getAccessRouteList(userData);
@@ -49,12 +49,12 @@ const Routes = () => {
     if (isSubRole && routeList.length === 0) return <Auth />;
 
     const roleRoutes = {
-      admin: <AdminRoutes routeList={routeList.length > 0 ? routeList : fullRouteList} />,
-      user: <UserRoutes routeList={routeList.length > 0 ? routeList : fullRouteList} />,
+      admin: <AdminRoutes routeList={routeList} />,
+      user: <UserRoutes routeList={routeList} />,
     };
 
     return roleRoutes[roleGroup] || <Auth />; // Fallback in case of an unknown role
-  }, [fullRouteList, isLoggedIn, isSubRole, roleGroup, routeList]);
+  }, [isLoggedIn, isSubRole, roleGroup, routeList]);
 
   return <Suspense fallback={<FallbackPage />}>{renderRoutes}</Suspense>;
 };

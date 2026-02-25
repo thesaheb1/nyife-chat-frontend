@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,6 +15,7 @@ import {
   showSuccessToast,
 } from "@/lib/utils/toast";
 import { requestPasswordReset } from "@/services/auth.service";
+import nyifeLogo from "@/assets/images/nyife-logo.svg";
 
 const AdminForgotPasswordPage = () => {
   const router = useRouter();
@@ -69,12 +70,8 @@ const AdminForgotPasswordPage = () => {
       <section className="space-y-6">
         <header className="space-y-3 text-center">
           <NavLink to="/" className="mx-auto flex justify-center">
-            <img src="/nyife-icon.svg" alt="NYIFE" className="h-12 w-auto" />
+            <img src={nyifeLogo} alt="NYIFE" className="h-14 w-auto" />
           </NavLink>
-
-          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/15 text-primary">
-            <ShieldCheck className="size-6" />
-          </div>
 
           <h1 className="text-2xl font-semibold tracking-tight">Reset Password</h1>
           <p className="text-sm text-muted-foreground">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, Clock3, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Clock3, Eye, EyeOff, Loader2 } from "lucide-react";
 import { NavLink, useSearchParams } from "react-router-dom";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -16,6 +16,7 @@ import {
   showSuccessToast,
 } from "@/lib/utils/toast";
 import { resendOtp, resetPassword } from "@/services/auth.service";
+import nyifeLogo from "@/assets/images/nyife-logo.svg";
 
 import AdminOTPInput from "../Components/AdminOTPInput";
 
@@ -198,11 +199,8 @@ const AdminChangePasswordPage = () => {
         <section className="space-y-4">
           <header className="space-y-3 text-center">
             <NavLink to="/" className="mx-auto flex justify-center">
-              <img src="/nyife-icon.svg" alt="NYIFE" className="h-12 w-auto" />
+              <img src={nyifeLogo} alt="NYIFE" className="h-14 w-auto" />
             </NavLink>
-            <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/15 text-primary">
-              <ShieldCheck className="size-6" />
-            </div>
             <h1 className="text-2xl font-semibold tracking-tight">Security Verification</h1>
             <p className="text-sm text-muted-foreground">
               Enter the 6-digit verification code sent to your registered email.
@@ -261,7 +259,7 @@ const AdminChangePasswordPage = () => {
         <section className="space-y-4">
           <header className="space-y-3 text-center">
             <NavLink to="/" className="mx-auto flex justify-center">
-              <img src="/nyife-icon.svg" alt="NYIFE" className="h-12 w-auto" />
+              <img src={nyifeLogo} alt="NYIFE" className="h-14 w-auto" />
             </NavLink>
             <h1 className="text-2xl font-semibold tracking-tight">Set New Password</h1>
             <p className="text-sm text-muted-foreground">
@@ -369,7 +367,7 @@ const AdminChangePasswordPage = () => {
         <section className="space-y-4 text-center">
           <header className="space-y-3">
             <NavLink to="/" className="mx-auto flex justify-center">
-              <img src="/nyife-icon.svg" alt="NYIFE" className="h-12 w-auto" />
+              <img src={nyifeLogo} alt="NYIFE" className="h-14 w-auto" />
             </NavLink>
             <h1 className="text-2xl font-semibold tracking-tight">Password Updated Successfully</h1>
             <p className="text-sm text-muted-foreground">
