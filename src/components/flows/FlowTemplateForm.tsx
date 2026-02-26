@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useFieldArray, useForm, Controller } from "react-hook-form";
+import { useFieldArray, useForm, Controller, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 import {
@@ -47,6 +48,20 @@ import {
 } from "@/types/flow.types";
 
 const KEY_REGEX = /^[a-z][a-z0-9_]{1,62}$/;
+
+const optionalNumber = z.preprocess((value) => {
+  if (value === "" || value === null || typeof value === "undefined") return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : value;
+}, z.number().finite().optional());
+
+const optionalPositiveInteger = z.preprocess((value) => {
+  if (value === "" || value === null || typeof value === "undefined") return undefined;
+  if (typeof value === "string" && value.trim() === "") return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : value;
+}, z.number().int().min(1, "Must be at least 1.").optional());
 
 const parseOptions = (value?: string): Array<{ label: string; value: string }> => {
   if (!value) return [];
@@ -366,10 +381,10 @@ const componentSchema = z
     required: z.boolean().optional(),
     helper_text: z.string().max(240).optional(),
     options_text: z.string().optional(),
-    min_length: z.coerce.number().optional(),
-    max_length: z.coerce.number().optional(),
-    min_value: z.coerce.number().optional(),
-    max_value: z.coerce.number().optional(),
+    min_length: optionalPositiveInteger,
+    max_length: optionalPositiveInteger,
+    min_value: optionalNumber,
+    max_value: optionalNumber,
   })
   .superRefine((val, ctx) => {
     const needsVariable = [
@@ -573,6 +588,182 @@ const actionTypeLabels: Record<FlowActionType, string> = {
   submit: "Submit",
   open_url: "Open URL",
   call_phone: "Call Phone",
+};
+
+const COMPONENT_TYPES_WITH_VARIABLE_KEY: readonly FlowComponentType[] = [
+  "input",
+  "email",
+  "textarea",
+  "phone",
+  "number",
+  "date",
+  "time",
+  "select",
+  "radio",
+  "checkbox",
+];
+
+const COMPONENT_TYPES_WITH_OPTIONS: readonly FlowComponentType[] = [
+  "select",
+  "radio",
+  "checkbox",
+];
+
+const COMPONENT_TYPES_WITH_PLACEHOLDER: readonly FlowComponentType[] = [
+  "input",
+  "email",
+  "textarea",
+  "phone",
+  "number",
+  "select",
+];
+
+const COMPONENT_TYPES_WITH_LENGTH_VALIDATION: readonly FlowComponentType[] = [
+  "input",
+  "email",
+  "textarea",
+  "phone",
+];
+
+const COMPONENT_TYPES_WITH_RANGE_VALIDATION: readonly FlowComponentType[] = ["number"];
+
+const isInList = <T,>(value: T, list: readonly T[]) => list.includes(value);
+
+const shouldShowVariableKey = (type: FlowComponentType) => isInList(type, COMPONENT_TYPES_WITH_VARIABLE_KEY);
+const shouldShowOptions = (type: FlowComponentType) => isInList(type, COMPONENT_TYPES_WITH_OPTIONS);
+const shouldShowPlaceholder = (type: FlowComponentType) => isInList(type, COMPONENT_TYPES_WITH_PLACEHOLDER);
+const shouldShowLengthValidation = (type: FlowComponentType) => isInList(type, COMPONENT_TYPES_WITH_LENGTH_VALIDATION);
+const shouldShowRangeValidation = (type: FlowComponentType) => isInList(type, COMPONENT_TYPES_WITH_RANGE_VALIDATION);
+const shouldShowHelperText = (type: FlowComponentType) => type !== "text" && type !== "summary";
+const shouldShowRequiredToggle = (type: FlowComponentType) => shouldShowVariableKey(type);
+
+const componentTypeHelpText: Record<FlowComponentType, string> = {
+  input: "Single-line text input for names or short text.",
+  email: "Email field with format validation.",
+  textarea: "Multi-line text area for notes and descriptions.",
+  phone: "Phone number field, usually E.164 format.",
+  number: "Numeric input with optional min/max value.",
+  date: "Date picker field.",
+  time: "Time picker field.",
+  select: "Dropdown where user chooses one option.",
+  radio: "Single-choice list shown as radio buttons.",
+  checkbox: "Multi-choice list where user can select many options.",
+  summary: "Read-only summary block, no user input captured.",
+  text: "Read-only text block for instructions or context.",
+};
+
+const actionTypeHelpText: Record<FlowActionType, string> = {
+  next_screen: "Moves user to a target screen in the flow.",
+  previous_screen: "Moves user back to a target screen.",
+  submit: "Submits the flow responses.",
+  open_url: "Opens an external URL.",
+  call_phone: "Starts a phone call using the provided number.",
+};
+
+const trimOrUndefined = (value?: string): string | undefined => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
+
+const getNestedErrorMessage = (value: unknown, field: string): string | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const nested = (value as Record<string, unknown>)[field];
+  if (!nested || typeof nested !== "object") return undefined;
+  const message = (nested as { message?: unknown }).message;
+  return typeof message === "string" ? message : undefined;
+};
+
+const getErrorMessage = (value: unknown): string | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const message = (value as { message?: unknown }).message;
+  return typeof message === "string" ? message : undefined;
+};
+
+const normalizeFlowComponent = (
+  component: FlowTemplateFormValues["screens"][number]["components"][number]
+): FlowScreen["components"][number] => {
+  const normalized: FlowScreen["components"][number] = {
+    key: component.key.trim(),
+    type: component.type,
+  };
+
+  const label = trimOrUndefined(component.label);
+  if (label) normalized.label = label;
+
+  if (shouldShowVariableKey(component.type)) {
+    const variableKey = trimOrUndefined(component.variable_key);
+    if (variableKey) normalized.variable_key = variableKey;
+    normalized.required = Boolean(component.required);
+  }
+
+  if (shouldShowPlaceholder(component.type)) {
+    const placeholder = trimOrUndefined(component.placeholder);
+    if (placeholder) normalized.placeholder = placeholder;
+  }
+
+  if (shouldShowHelperText(component.type)) {
+    const helperText = trimOrUndefined(component.helper_text);
+    if (helperText) normalized.helper_text = helperText;
+  }
+
+  if (shouldShowOptions(component.type)) {
+    normalized.options = parseOptions(component.options_text);
+  }
+
+  if (shouldShowLengthValidation(component.type)) {
+    if (typeof component.min_length === "number" && Number.isFinite(component.min_length) && component.min_length > 0) {
+      normalized.min_length = component.min_length;
+    }
+    if (typeof component.max_length === "number" && Number.isFinite(component.max_length) && component.max_length > 0) {
+      normalized.max_length = component.max_length;
+    }
+  }
+
+  if (shouldShowRangeValidation(component.type)) {
+    if (typeof component.min_value === "number" && Number.isFinite(component.min_value)) {
+      normalized.min_value = component.min_value;
+    }
+    if (typeof component.max_value === "number" && Number.isFinite(component.max_value)) {
+      normalized.max_value = component.max_value;
+    }
+  }
+
+  return normalized;
+};
+
+const normalizeFlowAction = (
+  action: FlowTemplateFormValues["screens"][number]["actions"][number],
+  values: FlowTemplateFormValues,
+  screenIndex: number
+): FlowScreen["actions"][number] => {
+  const normalized: FlowScreen["actions"][number] = {
+    key: action.key.trim(),
+    type: action.type,
+  };
+
+  const label = trimOrUndefined(action.label);
+  if (label) normalized.label = label;
+
+  if (action.type === "next_screen" || action.type === "previous_screen") {
+    const fallbackTarget =
+      action.type === "previous_screen" && screenIndex > 0
+        ? values.screens[screenIndex - 1]?.key?.trim()
+        : undefined;
+    const targetScreen = trimOrUndefined(action.target_screen_key) || fallbackTarget;
+    if (targetScreen) normalized.target_screen_key = targetScreen;
+  }
+
+  if (action.type === "open_url") {
+    const url = trimOrUndefined(action.url);
+    if (url) normalized.url = url;
+  }
+
+  if (action.type === "call_phone") {
+    const phone = trimOrUndefined(action.phone);
+    if (phone) normalized.phone = phone;
+  }
+
+  return normalized;
 };
 
 type PreviewTheme = "dark" | "light";
@@ -783,30 +974,8 @@ export default function FlowTemplateForm({
         key: screen.key.trim(),
         title: screen.title.trim(),
         is_entry_point: Boolean(screen.is_entry_point),
-        components: screen.components.map((component) => ({
-          key: component.key.trim(),
-          type: component.type,
-          label: component.label?.trim() || undefined,
-          variable_key: component.variable_key?.trim() || undefined,
-          placeholder: component.placeholder?.trim() || undefined,
-          required: Boolean(component.required),
-          helper_text: component.helper_text?.trim() || undefined,
-          options: parseOptions(component.options_text),
-          min_length: Number.isFinite(component.min_length) ? component.min_length : undefined,
-          max_length: Number.isFinite(component.max_length) ? component.max_length : undefined,
-          min_value: Number.isFinite(component.min_value) ? component.min_value : undefined,
-          max_value: Number.isFinite(component.max_value) ? component.max_value : undefined,
-        })),
-        actions: screen.actions.map((action) => ({
-          key: action.key.trim(),
-          type: action.type,
-          label: action.label?.trim() || undefined,
-          target_screen_key:
-            action.target_screen_key?.trim() ||
-            (action.type === "previous_screen" && sIndex > 0 ? values.screens[sIndex - 1]?.key?.trim() : undefined),
-          url: action.url?.trim() || undefined,
-          phone: action.phone?.trim() || undefined,
-        })),
+        components: screen.components.map(normalizeFlowComponent),
+        actions: screen.actions.map((action) => normalizeFlowAction(action, values, sIndex)),
       })),
     };
 
@@ -1003,12 +1172,13 @@ export default function FlowTemplateForm({
               <ScreenEditor
                 key={screenFields[activeEditorScreenIndex].id}
                 form={form}
-                control={form.control}
                 index={activeEditorScreenIndex}
                 onRemove={() => handleRemoveScreen(activeEditorScreenIndex)}
                 canRemove={screenFields.length > 1}
                 onSetEntryPoint={() => handleSetEntryPoint(activeEditorScreenIndex)}
-                screenKeys={watchedScreens?.map((s) => s.key).filter(Boolean) || []}
+                screenOptions={(watchedScreens || [])
+                  .filter((screen) => Boolean(screen.key))
+                  .map((screen) => ({ key: screen.key, title: screen.title }))}
               />
             ) : null}
           </div>
@@ -1084,109 +1254,166 @@ export default function FlowTemplateForm({
   );
 }
 
-function ScreenEditor({
-  form,
-  control,
-  index,
-  onRemove,
-  canRemove,
-  onSetEntryPoint,
-  screenKeys,
-}: {
-  form: any;
-  control: any;
+type ScreenEditorProps = {
+  form: UseFormReturn<FlowTemplateFormValues>;
   index: number;
   onRemove: () => void;
   canRemove: boolean;
   onSetEntryPoint: () => void;
-  screenKeys: string[];
-}) {
+  screenOptions: Array<{ key: string; title: string }>;
+};
+
+function ScreenEditor({
+  form,
+  index,
+  onRemove,
+  canRemove,
+  onSetEntryPoint,
+  screenOptions,
+}: ScreenEditorProps) {
   const componentsArray = useFieldArray({
-    control,
-    name: `screens.${index}.components`,
+    control: form.control,
+    name: `screens.${index}.components` as const,
   });
 
   const actionsArray = useFieldArray({
-    control,
-    name: `screens.${index}.actions`,
+    control: form.control,
+    name: `screens.${index}.actions` as const,
   });
 
-  const isEntry = form.watch(`screens.${index}.is_entry_point`);
-  const title = form.watch(`screens.${index}.title`) || `Screen ${index + 1}`;
-  const componentErrors = (form.formState.errors.screens?.[index] as any)?.components;
-  const actionErrors = (form.formState.errors.screens?.[index] as any)?.actions;
+  const isEntry = Boolean(form.watch(`screens.${index}.is_entry_point` as const));
+  const title = form.watch(`screens.${index}.title` as const) || `Screen ${index + 1}`;
+  const screenKey = form.watch(`screens.${index}.key` as const) || "";
+  const watchedComponents = form.watch(`screens.${index}.components` as const) || [];
+  const watchedActions = form.watch(`screens.${index}.actions` as const) || [];
+
+  const screenErrors = form.formState.errors.screens?.[index];
+  const componentErrors = screenErrors?.components;
+  const actionErrors = screenErrors?.actions;
+  const componentErrorRows = Array.isArray(componentErrors) ? componentErrors : [];
+  const actionErrorRows = Array.isArray(actionErrors) ? actionErrors : [];
 
   const addComponent = () => {
+    const nextIndex = componentsArray.fields.length + 1;
     componentsArray.append({
-      key: `field_${index + 1}_${componentsArray.fields.length + 1}`,
+      key: `field_${index + 1}_${nextIndex}`,
       type: "input",
       label: "New Field",
-      variable_key: `field_${index + 1}_${componentsArray.fields.length + 1}`,
+      variable_key: `field_${index + 1}_${nextIndex}`,
+      placeholder: "",
+      helper_text: "",
+      options_text: "",
       required: false,
     });
   };
 
   const addAction = () => {
+    const nextKey = `action_${index + 1}_${actionsArray.fields.length + 1}`;
+    const fallbackTarget = screenOptions.find((screen) => screen.key !== screenKey)?.key || "";
     actionsArray.append({
-      key: `action_${index + 1}_${actionsArray.fields.length + 1}`,
-      type: "next_screen",
-      label: "Next",
-      target_screen_key: "",
+      key: nextKey,
+      type: fallbackTarget ? "next_screen" : "submit",
+      label: fallbackTarget ? "Continue" : "Submit",
+      target_screen_key: fallbackTarget,
+      url: "",
+      phone: "",
     });
+  };
+
+  const getNavigationTargets = (actionType: FlowActionType) => {
+    if (actionType !== "next_screen" && actionType !== "previous_screen") return [];
+    return screenOptions.filter((screen) => screen.key && screen.key !== screenKey);
   };
 
   return (
     <section className="rounded-xl border border-border bg-card shadow-sm">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold">{title}</p>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{title}</p>
           <div className="mt-1 flex items-center gap-2">
-            {isEntry && <Badge variant="outline">Entry Point</Badge>}
-            <button type="button" className="text-xs text-primary underline" onClick={onSetEntryPoint}>
-              Mark as entry
+            {isEntry ? <Badge variant="outline">Entry Point</Badge> : null}
+            <button
+              type="button"
+              className="text-xs text-primary underline-offset-2 hover:underline"
+              onClick={onSetEntryPoint}
+              disabled={isEntry}
+            >
+              {isEntry ? "Entry point selected" : "Mark as entry point"}
             </button>
           </div>
         </div>
 
-        {canRemove && (
+        {canRemove ? (
           <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onRemove}>
             <Trash2 className="size-4 text-destructive" />
           </Button>
-        )}
+        ) : null}
       </header>
 
-      <div className="space-y-4 p-4">
+      <div className="space-y-5 p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label>Screen Key</Label>
-            <Input {...form.register(`screens.${index}.key`)} className="font-mono" />
-            <InlineError message={form.formState.errors.screens?.[index]?.key?.message} />
+            <Input {...form.register(`screens.${index}.key` as const)} className="font-mono" />
+            <InlineError message={getErrorMessage(screenErrors?.key)} />
           </div>
           <div className="space-y-1.5">
             <Label>Screen Title</Label>
-            <Input {...form.register(`screens.${index}.title`)} />
-            <InlineError message={form.formState.errors.screens?.[index]?.title?.message} />
+            <Input {...form.register(`screens.${index}.title` as const)} />
+            <InlineError message={getErrorMessage(screenErrors?.title)} />
           </div>
         </div>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium">Components</h4>
+            <div>
+              <h4 className="text-sm font-medium">Components</h4>
+              <p className="text-xs text-muted-foreground">Only relevant fields are shown based on component type.</p>
+            </div>
             <Button type="button" variant="outline" size="sm" onClick={addComponent} className="gap-1.5">
-              <Plus className="size-3.5" /> Add Component
+              <Plus className="size-3.5" />
+              Add Component
             </Button>
           </div>
 
-          {componentErrors?.message && <InlineError message={componentErrors?.message} />}
+          <InlineError message={getErrorMessage(componentErrors)} />
 
           {componentsArray.fields.map((component, cIndex) => {
-            const type = form.watch(`screens.${index}.components.${cIndex}.type`) as FlowComponentType;
-            const needsOptions = ["select", "radio", "checkbox"].includes(type);
+            const componentPath = `screens.${index}.components.${cIndex}` as const;
+            const keyPath = `${componentPath}.key` as const;
+            const typePath = `${componentPath}.type` as const;
+            const labelPath = `${componentPath}.label` as const;
+            const variableKeyPath = `${componentPath}.variable_key` as const;
+            const placeholderPath = `${componentPath}.placeholder` as const;
+            const helperPath = `${componentPath}.helper_text` as const;
+            const optionsPath = `${componentPath}.options_text` as const;
+            const requiredPath = `${componentPath}.required` as const;
+            const minLengthPath = `${componentPath}.min_length` as const;
+            const maxLengthPath = `${componentPath}.max_length` as const;
+            const minValuePath = `${componentPath}.min_value` as const;
+            const maxValuePath = `${componentPath}.max_value` as const;
+
+            const type = watchedComponents[cIndex]?.type || "input";
+            const optionText = watchedComponents[cIndex]?.options_text || "";
+            const optionCount = parseOptions(optionText).length;
+
+            const showVariableKey = shouldShowVariableKey(type);
+            const showOptions = shouldShowOptions(type);
+            const showPlaceholder = shouldShowPlaceholder(type);
+            const showHelperText = shouldShowHelperText(type);
+            const showRequired = shouldShowRequiredToggle(type);
+            const showLengthValidation = shouldShowLengthValidation(type);
+            const showRangeValidation = shouldShowRangeValidation(type);
+
+            const rowError = componentErrorRows[cIndex];
 
             return (
-              <div key={component.id} className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Component {cIndex + 1}</p>
+              <div key={component.id} className="space-y-3 rounded-lg border border-border bg-background p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Component {cIndex + 1}</p>
+                    <p className="truncate text-xs text-muted-foreground">{componentTypeHelpText[type]}</p>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1202,17 +1429,52 @@ function ScreenEditor({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Key</Label>
-                    <Input {...form.register(`screens.${index}.components.${cIndex}.key`)} className="font-mono" />
-                    <InlineError message={(componentErrors?.[cIndex] as any)?.key?.message} />
+                    <Input {...form.register(keyPath)} className="font-mono" />
+                    <InlineError message={getNestedErrorMessage(rowError, "key")} />
                   </div>
 
                   <div className="space-y-1">
                     <Label>Type</Label>
                     <Controller
                       control={form.control}
-                      name={`screens.${index}.components.${cIndex}.type`}
+                      name={typePath}
                       render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value}
+                          onValueChange={(nextTypeValue) => {
+                            const nextType = nextTypeValue as FlowComponentType;
+                            field.onChange(nextType);
+
+                            if (!shouldShowVariableKey(nextType)) {
+                              form.setValue(variableKeyPath, "", { shouldDirty: true, shouldValidate: true });
+                              form.setValue(requiredPath, false, { shouldDirty: true, shouldValidate: true });
+                            } else if (!form.getValues(variableKeyPath)) {
+                              form.setValue(variableKeyPath, form.getValues(keyPath), { shouldDirty: true });
+                            }
+
+                            if (!shouldShowPlaceholder(nextType)) {
+                              form.setValue(placeholderPath, "", { shouldDirty: true });
+                            }
+
+                            if (!shouldShowHelperText(nextType)) {
+                              form.setValue(helperPath, "", { shouldDirty: true });
+                            }
+
+                            if (!shouldShowOptions(nextType)) {
+                              form.setValue(optionsPath, "", { shouldDirty: true });
+                            }
+
+                            if (!shouldShowLengthValidation(nextType)) {
+                              form.setValue(minLengthPath, undefined, { shouldDirty: true });
+                              form.setValue(maxLengthPath, undefined, { shouldDirty: true });
+                            }
+
+                            if (!shouldShowRangeValidation(nextType)) {
+                              form.setValue(minValuePath, undefined, { shouldDirty: true });
+                              form.setValue(maxValuePath, undefined, { shouldDirty: true });
+                            }
+                          }}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -1228,79 +1490,99 @@ function ScreenEditor({
                     />
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2">
                     <Label>Label</Label>
-                    <Input {...form.register(`screens.${index}.components.${cIndex}.label`)} />
+                    <Input {...form.register(labelPath)} placeholder="Visible text shown to user" />
                   </div>
 
-                  <div className="space-y-1">
-                    <Label>Variable Key</Label>
-                    <Input {...form.register(`screens.${index}.components.${cIndex}.variable_key`)} className="font-mono" />
-                    <InlineError message={(componentErrors?.[cIndex] as any)?.variable_key?.message} />
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label>Placeholder</Label>
-                    <Input {...form.register(`screens.${index}.components.${cIndex}.placeholder`)} />
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label>Helper Text</Label>
-                    <Input {...form.register(`screens.${index}.components.${cIndex}.helper_text`)} />
-                  </div>
-
-                  {needsOptions && (
+                  {showVariableKey ? (
                     <div className="space-y-1 sm:col-span-2">
-                      <Label>Options (one per line, format: Label|value)</Label>
-                      <Textarea
-                        rows={3}
-                        className="font-mono text-xs"
-                        {...form.register(`screens.${index}.components.${cIndex}.options_text`)}
-                        placeholder={"High|high\nMedium|medium\nLow|low"}
-                      />
-                      <InlineError message={(componentErrors?.[cIndex] as any)?.options_text?.message} />
+                      <Label>Variable Key</Label>
+                      <Input {...form.register(variableKeyPath)} className="font-mono" placeholder="customer_name" />
+                      <InlineError message={getNestedErrorMessage(rowError, "variable_key")} />
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
+                      This component is display-only and does not save user input.
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                    <div className="space-y-1">
-                      <Label>Min Length</Label>
-                      <Input type="number" {...form.register(`screens.${index}.components.${cIndex}.min_length`)} />
+                  {showPlaceholder ? (
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Placeholder</Label>
+                      <Input {...form.register(placeholderPath)} placeholder="Text shown before user input" />
                     </div>
-                    <div className="space-y-1">
-                      <Label>Max Length</Label>
-                      <Input type="number" {...form.register(`screens.${index}.components.${cIndex}.max_length`)} />
-                      <InlineError message={(componentErrors?.[cIndex] as any)?.max_length?.message} />
-                    </div>
-                  </div>
+                  ) : null}
 
-                  <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                    <div className="space-y-1">
-                      <Label>Min Value</Label>
-                      <Input type="number" {...form.register(`screens.${index}.components.${cIndex}.min_value`)} />
+                  {showHelperText ? (
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Helper Text</Label>
+                      <Input {...form.register(helperPath)} placeholder="Optional guidance shown under the field" />
                     </div>
-                    <div className="space-y-1">
-                      <Label>Max Value</Label>
-                      <Input type="number" {...form.register(`screens.${index}.components.${cIndex}.max_value`)} />
-                      <InlineError message={(componentErrors?.[cIndex] as any)?.max_value?.message} />
-                    </div>
-                  </div>
+                  ) : null}
 
-                  <div className="flex items-center gap-2 sm:col-span-2">
-                    <Controller
-                      control={form.control}
-                      name={`screens.${index}.components.${cIndex}.required`}
-                      render={({ field }) => (
-                        <input
-                          type="checkbox"
-                          checked={Boolean(field.value)}
-                          onChange={(e) => field.onChange(e.target.checked)}
-                          className="size-4"
-                        />
-                      )}
-                    />
-                    <span className="text-xs text-muted-foreground">Required field</span>
-                  </div>
+                  {showOptions ? (
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Options</Label>
+                      <Textarea
+                        rows={4}
+                        className="font-mono text-xs"
+                        {...form.register(optionsPath)}
+                        placeholder={"Label one|value_one\nLabel two|value_two"}
+                      />
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>Format: `Label|value` per line.</span>
+                        <span>{optionCount} option(s) parsed</span>
+                      </div>
+                      <InlineError message={getNestedErrorMessage(rowError, "options_text")} />
+                    </div>
+                  ) : null}
+
+                  {showLengthValidation ? (
+                    <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                      <div className="space-y-1">
+                        <Label>Min Length</Label>
+                        <Input type="number" min={0} {...form.register(minLengthPath)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Max Length</Label>
+                        <Input type="number" min={0} {...form.register(maxLengthPath)} />
+                        <InlineError message={getNestedErrorMessage(rowError, "max_length")} />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showRangeValidation ? (
+                    <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                      <div className="space-y-1">
+                        <Label>Min Value</Label>
+                        <Input type="number" {...form.register(minValuePath)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Max Value</Label>
+                        <Input type="number" {...form.register(maxValuePath)} />
+                        <InlineError message={getNestedErrorMessage(rowError, "max_value")} />
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showRequired ? (
+                    <div className="rounded-md border border-border bg-muted/20 px-3 py-2 sm:col-span-2">
+                      <Controller
+                        control={form.control}
+                        name={requiredPath}
+                        render={({ field }) => (
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-medium">Required Field</p>
+                              <p className="text-[11px] text-muted-foreground">User must provide this value before submit.</p>
+                            </div>
+                            <Switch checked={Boolean(field.value)} onCheckedChange={(checked) => field.onChange(Boolean(checked))} />
+                          </div>
+                        )}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             );
@@ -1309,21 +1591,38 @@ function ScreenEditor({
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-medium">Actions</h4>
+            <div>
+              <h4 className="text-sm font-medium">Actions</h4>
+              <p className="text-xs text-muted-foreground">Configure what happens when users tap action buttons.</p>
+            </div>
             <Button type="button" variant="outline" size="sm" onClick={addAction} className="gap-1.5">
-              <Plus className="size-3.5" /> Add Action
+              <Plus className="size-3.5" />
+              Add Action
             </Button>
           </div>
 
-          {actionErrors?.message && <InlineError message={actionErrors?.message} />}
+          <InlineError message={getErrorMessage(actionErrors)} />
 
           {actionsArray.fields.map((action, aIndex) => {
-            const type = form.watch(`screens.${index}.actions.${aIndex}.type`) as FlowActionType;
+            const actionPath = `screens.${index}.actions.${aIndex}` as const;
+            const keyPath = `${actionPath}.key` as const;
+            const typePath = `${actionPath}.type` as const;
+            const labelPath = `${actionPath}.label` as const;
+            const targetScreenPath = `${actionPath}.target_screen_key` as const;
+            const urlPath = `${actionPath}.url` as const;
+            const phonePath = `${actionPath}.phone` as const;
+
+            const type = watchedActions[aIndex]?.type || "submit";
+            const navigationTargets = getNavigationTargets(type);
+            const rowError = actionErrorRows[aIndex];
 
             return (
-              <div key={action.id} className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase text-muted-foreground">Action {aIndex + 1}</p>
+              <div key={action.id} className="space-y-3 rounded-lg border border-border bg-background p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">Action {aIndex + 1}</p>
+                    <p className="truncate text-xs text-muted-foreground">{actionTypeHelpText[type]}</p>
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -1339,17 +1638,40 @@ function ScreenEditor({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label>Key</Label>
-                    <Input {...form.register(`screens.${index}.actions.${aIndex}.key`)} className="font-mono" />
-                    <InlineError message={(actionErrors?.[aIndex] as any)?.key?.message} />
+                    <Input {...form.register(keyPath)} className="font-mono" />
+                    <InlineError message={getNestedErrorMessage(rowError, "key")} />
                   </div>
 
                   <div className="space-y-1">
                     <Label>Type</Label>
                     <Controller
                       control={form.control}
-                      name={`screens.${index}.actions.${aIndex}.type`}
+                      name={typePath}
                       render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value}
+                          onValueChange={(nextTypeValue) => {
+                            const nextType = nextTypeValue as FlowActionType;
+                            field.onChange(nextType);
+
+                            if (nextType !== "open_url") {
+                              form.setValue(urlPath, "", { shouldDirty: true });
+                            }
+
+                            if (nextType !== "call_phone") {
+                              form.setValue(phonePath, "", { shouldDirty: true });
+                            }
+
+                            if (nextType !== "next_screen" && nextType !== "previous_screen") {
+                              form.setValue(targetScreenPath, "", { shouldDirty: true });
+                            } else if (!form.getValues(targetScreenPath)) {
+                              const fallbackTarget = getNavigationTargets(nextType)[0]?.key;
+                              if (fallbackTarget) {
+                                form.setValue(targetScreenPath, fallbackTarget, { shouldDirty: true, shouldValidate: true });
+                              }
+                            }
+                          }}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -1365,51 +1687,54 @@ function ScreenEditor({
                     />
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-1 sm:col-span-2">
                     <Label>Label</Label>
-                    <Input {...form.register(`screens.${index}.actions.${aIndex}.label`)} />
+                    <Input {...form.register(labelPath)} placeholder="Button label shown to user" />
                   </div>
 
-                  {(type === "next_screen" || type === "previous_screen") && (
-                    <div className="space-y-1">
+                  {(type === "next_screen" || type === "previous_screen") ? (
+                    <div className="space-y-1 sm:col-span-2">
                       <Label>Target Screen</Label>
                       <Controller
                         control={form.control}
-                        name={`screens.${index}.actions.${aIndex}.target_screen_key`}
+                        name={targetScreenPath}
                         render={({ field }) => (
-                          <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <Select value={field.value || ""} onValueChange={field.onChange} disabled={!navigationTargets.length}>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select screen" />
+                              <SelectValue placeholder={navigationTargets.length ? "Select target screen" : "No target screen available"} />
                             </SelectTrigger>
                             <SelectContent>
-                              {screenKeys.map((key) => (
-                                <SelectItem key={key} value={key}>
-                                  {key}
+                              {navigationTargets.map((screen) => (
+                                <SelectItem key={screen.key} value={screen.key}>
+                                  {screen.title ? `${screen.title} (${screen.key})` : screen.key}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         )}
                       />
-                      <InlineError message={(actionErrors?.[aIndex] as any)?.target_screen_key?.message} />
+                      {!navigationTargets.length ? (
+                        <p className="text-[11px] text-muted-foreground">Add another screen to enable navigation actions.</p>
+                      ) : null}
+                      <InlineError message={getNestedErrorMessage(rowError, "target_screen_key")} />
                     </div>
-                  )}
+                  ) : null}
 
-                  {type === "open_url" && (
+                  {type === "open_url" ? (
                     <div className="space-y-1 sm:col-span-2">
                       <Label>URL</Label>
-                      <Input placeholder="https://example.com" {...form.register(`screens.${index}.actions.${aIndex}.url`)} />
-                      <InlineError message={(actionErrors?.[aIndex] as any)?.url?.message} />
+                      <Input placeholder="https://example.com" {...form.register(urlPath)} />
+                      <InlineError message={getNestedErrorMessage(rowError, "url")} />
                     </div>
-                  )}
+                  ) : null}
 
-                  {type === "call_phone" && (
+                  {type === "call_phone" ? (
                     <div className="space-y-1 sm:col-span-2">
                       <Label>Phone</Label>
-                      <Input placeholder="+14155552671" {...form.register(`screens.${index}.actions.${aIndex}.phone`)} />
-                      <InlineError message={(actionErrors?.[aIndex] as any)?.phone?.message} />
+                      <Input placeholder="+14155552671" {...form.register(phonePath)} />
+                      <InlineError message={getNestedErrorMessage(rowError, "phone")} />
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             );

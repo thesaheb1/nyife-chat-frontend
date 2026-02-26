@@ -77,6 +77,31 @@ const MAX_BUTTONS = 10;
 const MAX_CAROUSEL_CARDS = 10;
 const MIN_CAROUSEL_CARDS = 2;
 
+const CATEGORY_OPTIONS_BY_TYPE: Record<
+  TemplateTypeId,
+  Array<"MARKETING" | "AUTHENTICATION" | "UTILITY">
+> = {
+  standard: ["MARKETING", "UTILITY"],
+  authentication: ["AUTHENTICATION"],
+  carousel: ["MARKETING", "UTILITY"],
+  flow: ["UTILITY", "MARKETING"],
+};
+
+const DEFAULT_CATEGORY_BY_TYPE: Record<
+  TemplateTypeId,
+  "MARKETING" | "AUTHENTICATION" | "UTILITY"
+> = {
+  standard: "MARKETING",
+  authentication: "AUTHENTICATION",
+  carousel: "MARKETING",
+  flow: "UTILITY",
+};
+
+const isAllowedCategoryForType = (
+  typeId: TemplateTypeId,
+  category: "MARKETING" | "AUTHENTICATION" | "UTILITY"
+): boolean => CATEGORY_OPTIONS_BY_TYPE[typeId].includes(category);
+
 const getVariables = (input?: string): number[] => {
   if (!input) return [];
   return [...input.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
@@ -127,9 +152,6 @@ const buttonSchema = z
       if (!btn.flow_id || btn.flow_id.trim() === "") {
         ctx.addIssue({ code: "custom", path: ["flow_id"], message: "Flow ID is required — get this from your Flows section" });
       }
-      if (!btn.flow_action) {
-        ctx.addIssue({ code: "custom", path: ["flow_action"], message: "Flow action is required" });
-      }
       if (btn.flow_action === "navigate" && (!btn.navigate_screen || btn.navigate_screen.trim() === "")) {
         ctx.addIssue({ code: "custom", path: ["navigate_screen"], message: "Navigate screen is required when flow action is navigate" });
       }
@@ -147,7 +169,7 @@ const componentSchema = z.object({
   carousel_cards_json: z.string().optional(),
 });
 
-export const templateFormSchema = z
+const templateFormSchema = z
   .object({
     name: z
       .string()
@@ -157,57 +179,40 @@ export const templateFormSchema = z
         /^[a-z0-9_]+$/,
         'Only lowercase letters (a-z), numbers (0-9), and underscores (_). Example: "order_update_v1"'
       ),
+    template_type: z.enum(["standard", "authentication", "carousel", "flow"]),
     category: z.enum(["MARKETING", "AUTHENTICATION", "UTILITY"]),
     language: z.string().min(1, "Please select a language"),
     components: z.array(componentSchema).min(1, "At least one component is required"),
   })
   .superRefine((data, ctx) => {
+    if (!isAllowedCategoryForType(data.template_type, data.category)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["category"],
+        message: `${data.template_type} templates do not support ${data.category} category.`,
+      });
+    }
+
+    const componentTypes = new Set(data.components.map((c) => c.type));
     const body = data.components.find((c) => c.type === "BODY");
     const header = data.components.find((c) => c.type === "HEADER");
+    const footer = data.components.find((c) => c.type === "FOOTER");
     const buttons = data.components.find((c) => c.type === "BUTTONS")?.buttons || [];
     const carousel = data.components.find((c) => c.type === "CAROUSEL");
 
-    // Body is required unless authentication
-    if (data.category !== "AUTHENTICATION") {
-      if (!body || !body.text || body.text.trim().length === 0) {
+    if (!body || !body.text || body.text.trim().length === 0) {
+      if (data.template_type !== "authentication") {
         ctx.addIssue({
           code: "custom",
           path: ["components"],
           message: "Body text is required — this is the main content of your message",
         });
-      } else if (body.text.length > MAX_BODY) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["components"],
-          message: `Body text is too long (${body.text.length}/${MAX_BODY} characters)`,
-        });
       }
-    }
-
-    if (data.category === "AUTHENTICATION") {
-      if (!body) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["components"],
-          message: "Authentication templates must include a BODY component.",
-        });
-      }
-      const authButtons = buttons.filter((b) => b.type === "OTP");
-      if (authButtons.length !== 1 || buttons.length !== 1) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["components"],
-          message: "Authentication templates must have exactly one OTP button.",
-        });
-      }
-    }
-
-    // Header text length
-    if (header?.format === "TEXT" && header.text && header.text.length > MAX_HEADER_TEXT) {
+    } else if (body.text.length > MAX_BODY) {
       ctx.addIssue({
         code: "custom",
         path: ["components"],
-        message: `Header text is too long (max ${MAX_HEADER_TEXT} characters)`,
+        message: `Body text is too long (${body.text.length}/${MAX_BODY} characters)`,
       });
     }
 
@@ -227,6 +232,23 @@ export const templateFormSchema = z
       }
     }
 
+    // Header text length
+    if (header?.format === "TEXT" && header.text && header.text.length > MAX_HEADER_TEXT) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["components"],
+        message: `Header text is too long (max ${MAX_HEADER_TEXT} characters)`,
+      });
+    }
+
+    if (footer?.text && footer.text.length > MAX_FOOTER) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["components"],
+        message: `Footer text is too long (max ${MAX_FOOTER} characters)`,
+      });
+    }
+
     if (buttons.length > MAX_BUTTONS) {
       ctx.addIssue({
         code: "custom",
@@ -244,6 +266,111 @@ export const templateFormSchema = z
       });
     }
 
+    if (data.template_type === "standard") {
+      if (componentTypes.has("CAROUSEL")) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Standard templates cannot contain a CAROUSEL component.",
+        });
+      }
+
+      const restrictedButtons = buttons.filter((b) => b.type === "OTP" || b.type === "FLOW");
+      if (restrictedButtons.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Standard templates support QUICK_REPLY, URL and PHONE_NUMBER buttons only.",
+        });
+      }
+    }
+
+    if (data.template_type === "authentication") {
+      const invalidComponents = data.components.filter(
+        (c) => c.type !== "BODY" && c.type !== "BUTTONS"
+      );
+      if (invalidComponents.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication templates only support BODY and BUTTONS components.",
+        });
+      }
+
+      if (!body) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication templates must include a BODY component.",
+        });
+      } else if (body.text && body.text.trim().length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication body text is system-managed. Leave the BODY text empty.",
+        });
+      }
+      const authButtons = buttons.filter((b) => b.type === "OTP");
+      if (authButtons.length !== 1 || buttons.length !== 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Authentication templates must have exactly one OTP button.",
+        });
+      }
+    }
+
+    if (data.template_type === "flow") {
+      const invalidComponents = data.components.filter(
+        (c) => c.type !== "BODY" && c.type !== "BUTTONS"
+      );
+      if (invalidComponents.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Flow templates only support BODY and BUTTONS components.",
+        });
+      }
+
+      if (flowButtons.length !== 1 || buttons.length !== 1) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Flow templates must have exactly one FLOW button.",
+        });
+      }
+
+      const hasRestrictedButtons = buttons.some((b) => b.type !== "FLOW");
+      if (hasRestrictedButtons) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Flow templates only support FLOW button type.",
+        });
+      }
+    }
+
+    if (data.template_type === "carousel") {
+      const invalidComponents = data.components.filter(
+        (c) => c.type !== "BODY" && c.type !== "CAROUSEL"
+      );
+      if (invalidComponents.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Carousel templates only support BODY and CAROUSEL components.",
+        });
+      }
+
+      if (!carousel?.carousel_cards_json) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["components"],
+          message: "Carousel templates require a CAROUSEL component with cards.",
+        });
+      }
+    }
+
     if (carousel?.carousel_cards_json) {
       try {
         const cards = JSON.parse(carousel.carousel_cards_json) as Array<{ components?: TemplateComponent[] }>;
@@ -255,6 +382,7 @@ export const templateFormSchema = z
           });
         }
 
+        let referenceHeaderFormat: string | undefined;
         cards.forEach((card, cardIndex) => {
           const cardComponents = card.components || [];
           const cardHeader = cardComponents.find((c) => c.type === "HEADER");
@@ -267,6 +395,17 @@ export const templateFormSchema = z
               path: ["components"],
               message: `Card ${cardIndex + 1}: header must be IMAGE or VIDEO.`,
             });
+          }
+          if (cardHeader?.format) {
+            if (!referenceHeaderFormat) {
+              referenceHeaderFormat = cardHeader.format;
+            } else if (referenceHeaderFormat !== cardHeader.format) {
+              ctx.addIssue({
+                code: "custom",
+                path: ["components"],
+                message: "All carousel cards must use the same header format.",
+              });
+            }
           }
           if (!cardBody?.text?.trim()) {
             ctx.addIssue({
@@ -287,6 +426,26 @@ export const templateFormSchema = z
               path: ["components"],
               message: `Card ${cardIndex + 1}: at least one button is required.`,
             });
+          } else if (cardButtons.length > 2) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["components"],
+              message: `Card ${cardIndex + 1}: maximum 2 buttons are allowed.`,
+            });
+          } else {
+            const invalidCardButtons = cardButtons.some(
+              (button) =>
+                button.type !== "URL" &&
+                button.type !== "PHONE_NUMBER" &&
+                button.type !== "QUICK_REPLY"
+            );
+            if (invalidCardButtons) {
+              ctx.addIssue({
+                code: "custom",
+                path: ["components"],
+                message: `Card ${cardIndex + 1}: only URL, PHONE_NUMBER and QUICK_REPLY buttons are allowed.`,
+              });
+            }
           }
         });
       } catch {
@@ -410,11 +569,229 @@ const SAMPLES: Record<TemplateTypeId, Partial<TemplateFormValues>> = {
       },
       {
         type: "BUTTONS",
-        buttons: [{ type: "FLOW", text: "Fill Out Form", flow_id: "", flow_action: "navigate", navigate_screen: "FIRST_ENTRY_SCREEN" }],
+        buttons: [{ type: "FLOW", text: "Fill Out Form", flow_id: "" }],
       },
     ],
   },
 };
+
+type TemplateCategoryValue = TemplateFormValues["category"];
+type TemplateFormComponent = TemplateFormValues["components"][number];
+type TemplateFormButton = NonNullable<TemplateFormComponent["buttons"]>[number];
+
+const CATEGORY_LABELS: Record<TemplateCategoryValue, string> = {
+  MARKETING: "📣 Marketing",
+  UTILITY: "🔧 Utility",
+  AUTHENTICATION: "🔐 Authentication",
+};
+
+const isTemplateType = (value: unknown): value is TemplateTypeId =>
+  value === "standard" ||
+  value === "authentication" ||
+  value === "carousel" ||
+  value === "flow";
+
+const normalizeCategoryForType = (
+  typeId: TemplateTypeId,
+  category?: TemplateCategoryValue
+): TemplateCategoryValue => {
+  if (category && isAllowedCategoryForType(typeId, category)) {
+    return category;
+  }
+  return DEFAULT_CATEGORY_BY_TYPE[typeId];
+};
+
+const buildEmptyCarouselCardsJson = (): string =>
+  JSON.stringify([
+    {
+      components: [
+        { type: "HEADER", format: "IMAGE" },
+        { type: "BODY", text: "" },
+        { type: "BUTTONS", buttons: [{ type: "URL", text: "", url: "" }] },
+      ],
+    },
+    {
+      components: [
+        { type: "HEADER", format: "IMAGE" },
+        { type: "BODY", text: "" },
+        { type: "BUTTONS", buttons: [{ type: "URL", text: "", url: "" }] },
+      ],
+    },
+  ]);
+
+const parseCarouselCardsJson = (raw?: string): string => {
+  if (!raw) return buildEmptyCarouselCardsJson();
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length >= MIN_CAROUSEL_CARDS) {
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    // fallback handled below
+  }
+  return buildEmptyCarouselCardsJson();
+};
+
+const normalizeButtonsByType = (
+  buttons: TemplateFormButton[] | undefined,
+  allowed: TemplateButton["type"][]
+): TemplateFormButton[] => {
+  if (!buttons?.length) return [];
+  return buttons
+    .filter((button) => allowed.includes(button.type))
+    .map((button) => {
+      if (button.type === "URL") {
+        return {
+          type: "URL",
+          text: button.text || "",
+          url: button.url || "",
+        };
+      }
+      if (button.type === "PHONE_NUMBER") {
+        return {
+          type: "PHONE_NUMBER",
+          text: button.text || "",
+          phone_number: button.phone_number || "",
+        };
+      }
+      if (button.type === "FLOW") {
+        return {
+          type: "FLOW",
+          text: button.text || "",
+          flow_id: button.flow_id || "",
+        };
+      }
+      if (button.type === "OTP") {
+        return {
+          type: "OTP",
+          text: button.text || "Copy Code",
+          otp_type: button.otp_type || "COPY_CODE",
+        };
+      }
+      return {
+        type: "QUICK_REPLY",
+        text: button.text || "",
+      };
+    });
+};
+
+const normalizeComponentsForType = (
+  typeId: TemplateTypeId,
+  components: TemplateFormValues["components"] | undefined
+): TemplateFormValues["components"] => {
+  const source = components || [];
+  const getComponent = (type: TemplateFormComponent["type"]) =>
+    source.find((component) => component.type === type);
+
+  if (typeId === "authentication") {
+    const body = getComponent("BODY");
+    const buttons = getComponent("BUTTONS")?.buttons || [];
+    const otpButton =
+      normalizeButtonsByType(buttons, ["OTP"])[0] ||
+      ({ type: "OTP", text: "Copy Code", otp_type: "COPY_CODE" } as TemplateFormButton);
+
+    return [
+      {
+        type: "BODY",
+        add_security_recommendation: body?.add_security_recommendation ?? true,
+      },
+      {
+        type: "BUTTONS",
+        buttons: [otpButton],
+      },
+    ];
+  }
+
+  if (typeId === "carousel") {
+    const body = getComponent("BODY");
+    const carousel = getComponent("CAROUSEL");
+    return [
+      {
+        type: "BODY",
+        text: body?.text || "",
+      },
+      {
+        type: "CAROUSEL",
+        carousel_cards_json: parseCarouselCardsJson(carousel?.carousel_cards_json),
+      },
+    ];
+  }
+
+  if (typeId === "flow") {
+    const body = getComponent("BODY");
+    const buttons = getComponent("BUTTONS")?.buttons || [];
+    const flowButton =
+      normalizeButtonsByType(buttons, ["FLOW"])[0] ||
+      ({
+        type: "FLOW",
+        text: "Open Flow",
+        flow_id: "",
+      } as TemplateFormButton);
+
+    return [
+      {
+        type: "BODY",
+        text: body?.text || "",
+      },
+      {
+        type: "BUTTONS",
+        buttons: [flowButton],
+      },
+    ];
+  }
+
+  const header = getComponent("HEADER");
+  const body = getComponent("BODY");
+  const footer = getComponent("FOOTER");
+  const buttons = getComponent("BUTTONS");
+  const normalizedButtons = normalizeButtonsByType(buttons?.buttons, [
+    "QUICK_REPLY",
+    "URL",
+    "PHONE_NUMBER",
+  ]);
+
+  const normalized: TemplateFormValues["components"] = [
+    {
+      type: "BODY",
+      text: body?.text || "",
+    },
+  ];
+
+  if (header) {
+    normalized.unshift({
+      type: "HEADER",
+      format: header.format || "TEXT",
+      text: header.text || "",
+      header_handle: header.header_handle || "",
+    });
+  }
+
+  if (footer) {
+    normalized.push({
+      type: "FOOTER",
+      text: footer.text || "",
+    });
+  }
+
+  if (buttons || normalizedButtons.length > 0) {
+    normalized.push({
+      type: "BUTTONS",
+      buttons: normalizedButtons,
+    });
+  }
+
+  return normalized;
+};
+
+const normalizeValuesForType = (
+  values: TemplateFormValues,
+  typeId: TemplateTypeId
+): TemplateFormValues => ({
+  ...values,
+  template_type: typeId,
+  category: normalizeCategoryForType(typeId, values.category),
+  components: normalizeComponentsForType(typeId, values.components),
+});
 
 // ─────────────────────────────────────────────────────────────
 // SMALL HELPERS
@@ -571,12 +948,16 @@ export default function TemplateForm({
   isUpdate = false,
   onCancel,
 }: TemplateFormProps) {
+  const fallbackTypeFromDefaults = isTemplateType(defaultValues?.template_type)
+    ? defaultValues.template_type
+    : undefined;
+
   // Wizard phase: type selection → configure
   const [selectedType, setSelectedType] = useState<TemplateTypeId | null>(
-    defaultTypeId ?? null
+    defaultTypeId ?? fallbackTypeFromDefaults ?? null
   );
   const [phase, setPhase] = useState<"select" | "configure">(
-    defaultTypeId ? "configure" : "select"
+    defaultTypeId || fallbackTypeFromDefaults ? "configure" : "select"
   );
   const [previewVars, setPreviewVars] = useState<Record<string, string>>({});
   const [mediaPreviews, setMediaPreviews] = useState<Record<number, MediaState>>({});
@@ -587,12 +968,17 @@ export default function TemplateForm({
   // Build defaultValues when type selected
   const buildDefaults = (typeId: TemplateTypeId): TemplateFormValues => {
     const sample = SAMPLES[typeId];
+    const sourceComponents =
+      (defaultValues?.components as TemplateFormValues["components"] | undefined) ??
+      (sample.components as TemplateFormValues["components"] | undefined);
+    const sourceCategory = defaultValues?.category ?? sample.category;
+
     return {
-      name: "",
-      category: sample.category ?? "MARKETING",
-      language: "en_US",
-      components: sample.components as TemplateFormValues["components"] ?? [{ type: "BODY", text: "" }],
-      ...(defaultValues ?? {}),
+      name: defaultValues?.name ?? "",
+      template_type: typeId,
+      category: normalizeCategoryForType(typeId, sourceCategory),
+      language: defaultValues?.language ?? sample.language ?? "en_US",
+      components: normalizeComponentsForType(typeId, sourceComponents),
     };
   };
 
@@ -602,10 +988,14 @@ export default function TemplateForm({
       ? buildDefaults(selectedType)
       : {
         name: "",
+        template_type: "standard",
         category: "MARKETING",
         language: "en_US",
-        components: [{ type: "BODY", text: "" }],
-        ...defaultValues,
+        components: normalizeComponentsForType(
+          "standard",
+          defaultValues?.components as TemplateFormValues["components"] | undefined
+        ),
+        ...(defaultValues ?? {}),
       },
     mode: "onChange",
   });
@@ -637,14 +1027,25 @@ export default function TemplateForm({
 
 
   const watchedComponents = form.watch("components");
-  const watchedCategory = form.watch("category");
+  const watchedTemplateType = form.watch("template_type");
   const watchedName = form.watch("name");
+  const effectiveType = selectedType ?? watchedTemplateType ?? "standard";
+  const categoryOptions = CATEGORY_OPTIONS_BY_TYPE[effectiveType];
+  const isCategoryLocked = categoryOptions.length === 1;
   const capabilities = capabilitiesData?.data as TemplateCapabilities | undefined;
   const maxButtonCount = capabilities?.maxButtons ?? MAX_BUTTONS;
   const maxBodyLength = capabilities?.maxBodyLength ?? MAX_BODY;
   const maxHeaderTextLength = capabilities?.maxHeaderTextLength ?? MAX_HEADER_TEXT;
   const maxFooterLength = capabilities?.maxFooterLength ?? MAX_FOOTER;
   const maxButtonTextLength = capabilities?.maxButtonTextLength ?? MAX_BUTTON_TEXT;
+
+  useEffect(() => {
+    if (!selectedType) return;
+    const normalized = normalizeValuesForType(form.getValues(), selectedType);
+    form.setValue("template_type", normalized.template_type, { shouldDirty: false });
+    form.setValue("category", normalized.category, { shouldDirty: false });
+    replace(normalized.components);
+  }, [form, replace, selectedType]);
 
   // When a type is confirmed, reset form to sample defaults
   const handleTypeConfirm = () => {
@@ -661,8 +1062,19 @@ export default function TemplateForm({
     if (!selectedType) return;
     const sample = SAMPLES[selectedType];
     if (sample.name) form.setValue("name", sample.name);
+    form.setValue("template_type", selectedType, { shouldDirty: false });
+    form.setValue(
+      "category",
+      normalizeCategoryForType(selectedType, sample.category),
+      { shouldDirty: true }
+    );
     if (sample.components) {
-      replace(sample.components as TemplateFormValues["components"]);
+      replace(
+        normalizeComponentsForType(
+          selectedType,
+          sample.components as TemplateFormValues["components"]
+        )
+      );
     }
   };
 
@@ -693,7 +1105,11 @@ export default function TemplateForm({
         }));
       }
       if (c.carousel_cards_json) {
-        try { comp.cards = JSON.parse(c.carousel_cards_json); } catch { }
+        try {
+          comp.cards = JSON.parse(c.carousel_cards_json);
+        } catch {
+          // Ignore invalid card JSON in preview mode; schema validation handles this on submit.
+        }
       }
       return comp;
     });
@@ -740,7 +1156,9 @@ export default function TemplateForm({
 
   // Submit handler
   const handleFormSubmit = async (values: TemplateFormValues) => {
-    const components: TemplateComponent[] = values.components.map((c) => {
+    const normalizedValues = normalizeValuesForType(values, effectiveType);
+
+    const components: TemplateComponent[] = normalizedValues.components.map((c) => {
       const comp: TemplateComponent = { type: c.type as TemplateComponent["type"] };
       if (c.format) comp.format = c.format as TemplateComponent["format"];
       if (c.text) comp.text = c.text;
@@ -777,11 +1195,15 @@ export default function TemplateForm({
         comp.example = { header_handle: [c.header_handle] };
       }
       if (c.carousel_cards_json) {
-        try { comp.cards = JSON.parse(c.carousel_cards_json); } catch { }
+        try {
+          comp.cards = JSON.parse(c.carousel_cards_json);
+        } catch {
+          // Ignore invalid card JSON; validation already reports this to the user.
+        }
       }
       return comp;
     });
-    await onSubmit(values, components);
+    await onSubmit(normalizedValues, components);
   };
 
   // ─────────────────────────────────────────────────────────
@@ -869,6 +1291,8 @@ export default function TemplateForm({
           onSubmit={form.handleSubmit(handleFormSubmit)}
           className="flex flex-col gap-6 xl:flex-row"
         >
+          <input type="hidden" {...form.register("template_type")} />
+
           {/* ── LEFT: Form ── */}
           <div className="flex-1 min-w-0 space-y-5 pb-10">
 
@@ -950,20 +1374,28 @@ export default function TemplateForm({
                     control={form.control}
                     name="category"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange} disabled={isUpdate && watchedCategory === "AUTHENTICATION"}>
+                      <Select
+                        value={field.value}
+                        onValueChange={(value) => field.onChange(value as TemplateCategoryValue)}
+                        disabled={isCategoryLocked}
+                      >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="MARKETING">📣 Marketing</SelectItem>
-                          <SelectItem value="UTILITY">🔧 Utility</SelectItem>
-                          <SelectItem value="AUTHENTICATION">🔐 Authentication</SelectItem>
+                          {categoryOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {CATEGORY_LABELS[option]}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     )}
                   />
                   <FieldHint>
-                    Affects approval time. Utility templates get approved faster.
+                    {isCategoryLocked
+                      ? `Category is fixed for ${effectiveType} templates.`
+                      : "Choose the category that matches your message objective to improve approval quality."}
                   </FieldHint>
                 </div>
 
@@ -1006,10 +1438,18 @@ export default function TemplateForm({
             )}
 
             {/* ── Section 2: Components (varies by type) ── */}
-            {watchedCategory === "AUTHENTICATION" ? (
+            {effectiveType === "authentication" ? (
               <AuthenticationSection form={form} />
-            ) : selectedType === "carousel" ? (
+            ) : effectiveType === "carousel" ? (
               <CarouselSection form={form} />
+            ) : effectiveType === "flow" ? (
+              <FlowSection
+                form={form}
+                availableFlows={flowListData ?? []}
+                isLoadingFlows={isLoadingFlows}
+                maxBodyLength={maxBodyLength}
+                maxButtonTextLength={maxButtonTextLength}
+              />
             ) : (
               <StandardSections
                 form={form}
@@ -1019,9 +1459,6 @@ export default function TemplateForm({
                 mediaPreviews={mediaPreviews}
                 handleMediaUpload={handleMediaUpload}
                 clearMedia={clearMedia}
-                selectedType={selectedType}
-                availableFlows={flowListData ?? []}
-                isLoadingFlows={isLoadingFlows}
                 maxBodyLength={maxBodyLength}
                 maxHeaderTextLength={maxHeaderTextLength}
                 maxFooterLength={maxFooterLength}
@@ -1231,12 +1668,145 @@ function AuthenticationSection({ form }: { form: UseFormReturn<TemplateFormValue
 }
 
 // ─────────────────────────────────────────────────────────────
+// FLOW SECTION
+// ─────────────────────────────────────────────────────────────
+function FlowSection({
+  form,
+  availableFlows,
+  isLoadingFlows,
+  maxBodyLength,
+  maxButtonTextLength,
+}: {
+  form: UseFormReturn<TemplateFormValues>;
+  availableFlows: FlowListItem[];
+  isLoadingFlows: boolean;
+  maxBodyLength: number;
+  maxButtonTextLength: number;
+}) {
+  const components = form.watch("components");
+  const bodyIndex = components.findIndex((component) => component.type === "BODY");
+  const buttonsIndex = components.findIndex((component) => component.type === "BUTTONS");
+  const flowButton =
+    (buttonsIndex >= 0 ? form.watch(`components.${buttonsIndex}.buttons.0`) : undefined) || {
+      type: "FLOW",
+      text: "",
+      flow_id: "",
+    };
+  const flowErrors =
+    buttonsIndex >= 0
+      ? (
+          form.formState.errors.components?.[buttonsIndex] as
+            | { buttons?: Array<Record<string, { message?: string }>> }
+            | undefined
+        )?.buttons?.[0]
+      : undefined;
+
+  const updateFlowButton = (field: "text" | "flow_id", value: string) => {
+    form.setValue(`components.${buttonsIndex}.buttons.0.${field}`, value, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Alert className="border-orange-200 bg-orange-50 py-3">
+        <Zap className="h-4 w-4 text-orange-600" />
+        <AlertDescription className="text-xs text-orange-800">
+          Flow templates use a single FLOW button to open a WhatsApp Flow. Keep this template focused: one body message + one flow button.
+        </AlertDescription>
+      </Alert>
+
+      {bodyIndex >= 0 && (
+        <BodySectionCard
+          form={form}
+          index={bodyIndex}
+          maxBodyLength={maxBodyLength}
+        />
+      )}
+
+      {buttonsIndex >= 0 && (
+        <SectionCard
+          title="Flow Button"
+          subtitle="Configure the one button that opens your WhatsApp Flow"
+          icon={<Zap className="w-3.5 h-3.5 text-orange-500" />}
+          required
+        >
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Label</Label>
+              <div className="flex-1">
+                <div className="relative">
+                  <Input
+                    value={flowButton.text || ""}
+                    onChange={(e) => updateFlowButton("text", e.target.value)}
+                    placeholder="e.g. Fill Out Form"
+                    maxLength={maxButtonTextLength}
+                    className="h-7 text-xs pr-14"
+                  />
+                  <CharCount
+                    value={flowButton.text || ""}
+                    max={maxButtonTextLength}
+                    className="absolute right-2 top-1/2 -translate-y-1/2"
+                  />
+                </div>
+                <FieldError message={flowErrors?.text?.message} />
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2">
+              <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Flow ID</Label>
+              <div className="flex-1 space-y-1">
+                <Select
+                  value={flowButton.flow_id || ""}
+                  onValueChange={(value) => updateFlowButton("flow_id", value)}
+                >
+                  <SelectTrigger className="h-7 text-xs font-mono">
+                    <SelectValue placeholder={isLoadingFlows ? "Loading flows..." : "Select a published flow"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFlows.map((flow) => (
+                      <SelectItem key={flow.id} value={flow.flowId || flow.id}>
+                        {flow.name} ({flow.flowId || flow.id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={flowButton.flow_id || ""}
+                  onChange={(e) => updateFlowButton("flow_id", e.target.value)}
+                  placeholder="Or paste flow id manually"
+                  className="h-7 text-xs font-mono"
+                />
+                <FieldError message={flowErrors?.flow_id?.message} />
+              </div>
+            </div>
+
+            <FieldHint>
+              Use one published flow id. We only send required FLOW button fields to Meta to avoid invalid navigate screen rejections.
+            </FieldHint>
+          </div>
+        </SectionCard>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // CAROUSEL SECTION
 // ─────────────────────────────────────────────────────────────
 function CarouselSection({ form }: { form: UseFormReturn<TemplateFormValues> }) {
   const bodyIndex = form.watch("components").findIndex((c) => c.type === "BODY");
   const carouselIndex = form.watch("components").findIndex((c) => c.type === "CAROUSEL");
   const bodyText = form.watch(`components.${bodyIndex}.text`) || "";
+
+  type CarouselCardDraft = {
+    components?: Array<{
+      type?: string;
+      text?: string;
+      buttons?: Array<{ text?: string; url?: string }>;
+    }>;
+  };
 
   const [cards, setCards] = useState<Array<{
     bodyText: string;
@@ -1245,13 +1815,18 @@ function CarouselSection({ form }: { form: UseFormReturn<TemplateFormValues> }) 
   }>>(() => {
     try {
       const raw = form.watch(`components.${carouselIndex}.carousel_cards_json`);
-      const parsed = raw ? JSON.parse(raw) : [];
+      const parsed = raw ? (JSON.parse(raw) as CarouselCardDraft[]) : [];
       return parsed.length > 0
-        ? parsed.map((c: any) => ({
-          bodyText: c.components?.find((x: any) => x.type === "BODY")?.text || "",
-          buttonText: c.components?.find((x: any) => x.type === "BUTTONS")?.buttons?.[0]?.text || "",
-          buttonUrl: c.components?.find((x: any) => x.type === "BUTTONS")?.buttons?.[0]?.url || "",
-        }))
+        ? parsed.map((card) => {
+            const cardComponents = card.components || [];
+            const bodyComponent = cardComponents.find((component) => component.type === "BODY");
+            const buttonComponent = cardComponents.find((component) => component.type === "BUTTONS");
+            return {
+              bodyText: bodyComponent?.text || "",
+              buttonText: buttonComponent?.buttons?.[0]?.text || "",
+              buttonUrl: buttonComponent?.buttons?.[0]?.url || "",
+            };
+          })
         : [
             { bodyText: "", buttonText: "", buttonUrl: "" },
             { bodyText: "", buttonText: "", buttonUrl: "" },
@@ -1442,9 +2017,6 @@ interface StandardSectionsProps {
   mediaPreviews: Record<number, MediaState>;
   handleMediaUpload: (i: number, format: string) => void;
   clearMedia: (i: number) => void;
-  selectedType: TemplateTypeId | null;
-  availableFlows: FlowListItem[];
-  isLoadingFlows: boolean;
   maxBodyLength: number;
   maxHeaderTextLength: number;
   maxFooterLength: number;
@@ -1460,9 +2032,6 @@ function StandardSections({
   mediaPreviews,
   handleMediaUpload,
   clearMedia,
-  selectedType,
-  availableFlows,
-  isLoadingFlows,
   maxBodyLength,
   maxHeaderTextLength,
   maxFooterLength,
@@ -1470,7 +2039,6 @@ function StandardSections({
   maxButtons,
 }: StandardSectionsProps) {
   const watchedComponents = form.watch("components");
-  const watchedCategory = form.watch("category");
 
   const headerIdx = watchedComponents.findIndex((c) => c.type === "HEADER");
   const bodyIdx = watchedComponents.findIndex((c) => c.type === "BODY");
@@ -1520,12 +2088,8 @@ function StandardSections({
         <ButtonsSectionCard
           form={form}
           index={buttonsIdx}
-          category={watchedCategory}
-          selectedType={selectedType}
           maxButtonTextLength={maxButtonTextLength}
           maxButtons={maxButtons}
-          availableFlows={availableFlows}
-          isLoadingFlows={isLoadingFlows}
           onRemove={() => remove(buttonsIdx)}
         />
       )}
@@ -1889,34 +2453,39 @@ function FooterSectionCard({
 function ButtonsSectionCard({
   form,
   index,
-  category,
-  selectedType,
   maxButtonTextLength,
   maxButtons,
-  availableFlows,
-  isLoadingFlows,
   onRemove,
 }: {
   form: UseFormReturn<TemplateFormValues>;
   index: number;
-  category: string;
-  selectedType: TemplateTypeId | null;
   maxButtonTextLength: number;
   maxButtons: number;
-  availableFlows: FlowListItem[];
-  isLoadingFlows: boolean;
   onRemove: () => void;
 }) {
   type FormButton = NonNullable<TemplateFormValues["components"][number]["buttons"]>[number];
+  type StandardButtonType = "QUICK_REPLY" | "URL" | "PHONE_NUMBER";
+  const allowedButtonTypes: StandardButtonType[] = [
+    "QUICK_REPLY",
+    "URL",
+    "PHONE_NUMBER",
+  ];
   const buttons = form.watch(`components.${index}.buttons`) || [];
 
-  const addButton = (type: TemplateButton["type"]) => {
+  const buildBaseButton = (type: StandardButtonType, label = ""): FormButton => {
+    if (type === "URL") {
+      return { type: "URL", text: label, url: "" };
+    }
+    if (type === "PHONE_NUMBER") {
+      return { type: "PHONE_NUMBER", text: label, phone_number: "" };
+    }
+    return { type: "QUICK_REPLY", text: label };
+  };
+
+  const addButton = (type: StandardButtonType) => {
     if (buttons.length >= maxButtons) return;
     const current = form.getValues(`components.${index}.buttons`) || [];
-    const base: FormButton =
-      type === "FLOW"
-        ? { type, text: "", flow_action: "navigate", navigate_screen: "FIRST_ENTRY_SCREEN" }
-        : { type, text: "" };
+    const base = buildBaseButton(type, "");
     form.setValue(`components.${index}.buttons`, [...current, base]);
   };
 
@@ -1928,6 +2497,13 @@ function ButtonsSectionCard({
   const updateButton = (i: number, field: string, value: string) => {
     const current = [...(form.getValues(`components.${index}.buttons`) || [])];
     (current[i] as Record<string, string>)[field] = value;
+    form.setValue(`components.${index}.buttons`, current);
+  };
+
+  const changeType = (i: number, type: StandardButtonType) => {
+    const current = [...(form.getValues(`components.${index}.buttons`) || [])];
+    const currentLabel = current[i]?.text || "";
+    current[i] = buildBaseButton(type, currentLabel);
     form.setValue(`components.${index}.buttons`, current);
   };
 
@@ -1950,18 +2526,6 @@ function ButtonsSectionCard({
       desc: "Starts a phone call to the specified number",
       color: "bg-purple-50 border-purple-200",
     },
-    FLOW: {
-      icon: <Zap className="w-4 h-4 text-orange-500" />,
-      label: "Open Flow",
-      desc: "Opens an interactive WhatsApp Flow form",
-      color: "bg-orange-50 border-orange-200",
-    },
-    OTP: {
-      icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
-      label: "OTP",
-      desc: "Authentication OTP button",
-      color: "bg-emerald-50 border-emerald-200",
-    },
   };
 
   return (
@@ -1977,7 +2541,11 @@ function ButtonsSectionCard({
       <div className="space-y-3">
         {buttons.map((btn, i) => {
           const cfg = buttonTypeConfig[btn.type as keyof typeof buttonTypeConfig];
-          const btnErrors = (form.formState.errors.components as any)?.[index]?.buttons?.[i];
+          const btnErrors = (
+            form.formState.errors.components?.[index] as
+              | { buttons?: Array<Record<string, { message?: string }>> }
+              | undefined
+          )?.buttons?.[i];
 
           return (
             <div key={i} className={`rounded-xl border-2 overflow-hidden ${cfg?.color || ""}`}>
@@ -1993,23 +2561,24 @@ function ButtonsSectionCard({
               </div>
 
               <div className="px-3 py-3 space-y-2.5 bg-background/60">
-                {/* Type selector (only for non-OTP, non-FLOW) */}
-                {category !== "AUTHENTICATION" && (
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs w-16 flex-shrink-0">Type</Label>
-                    <Select value={btn.type} onValueChange={(v) => updateButton(i, "type", v)}>
-                      <SelectTrigger className="h-7 text-xs flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="QUICK_REPLY">Quick Reply</SelectItem>
-                        <SelectItem value="URL">Visit URL</SelectItem>
-                        <SelectItem value="PHONE_NUMBER">Call Phone</SelectItem>
-                        {selectedType === "flow" && <SelectItem value="FLOW">Open Flow</SelectItem>}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs w-16 flex-shrink-0">Type</Label>
+                  <Select
+                    value={btn.type}
+                    onValueChange={(value) =>
+                      changeType(i, value as "QUICK_REPLY" | "URL" | "PHONE_NUMBER")
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="QUICK_REPLY">Quick Reply</SelectItem>
+                      <SelectItem value="URL">Visit URL</SelectItem>
+                      <SelectItem value="PHONE_NUMBER">Call Phone</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 {/* Button label */}
                 <div className="flex items-center gap-2">
@@ -2023,8 +2592,7 @@ function ButtonsSectionCard({
                           btn.type === "QUICK_REPLY" ? "e.g. Yes, I'm interested" :
                             btn.type === "URL" ? "e.g. Track Order" :
                               btn.type === "PHONE_NUMBER" ? "e.g. Call Us" :
-                                btn.type === "FLOW" ? "e.g. Fill Out Form" :
-                                  btn.type === "OTP" ? "e.g. Copy Code" : "Button label"
+                                "Button label"
                         }
                         maxLength={maxButtonTextLength}
                         className="h-7 text-xs pr-14"
@@ -2068,86 +2636,6 @@ function ButtonsSectionCard({
                     </div>
                   </div>
                 )}
-
-                {/* OTP type */}
-                {btn.type === "OTP" && (
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs w-16 flex-shrink-0">OTP Mode</Label>
-                    <Select value={btn.otp_type || "COPY_CODE"} onValueChange={(v) => updateButton(i, "otp_type", v)}>
-                      <SelectTrigger className="h-7 text-xs flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="COPY_CODE">📋 Copy Code</SelectItem>
-                        <SelectItem value="ONE_TAP">👆 One Tap</SelectItem>
-                        <SelectItem value="ZERO_TAP">⚡ Zero Tap</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {/* Flow ID */}
-                {btn.type === "FLOW" && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-start gap-2">
-                      <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Flow ID</Label>
-                      <div className="flex-1 space-y-1">
-                        <Select value={btn.flow_id || ""} onValueChange={(v) => updateButton(i, "flow_id", v)}>
-                          <SelectTrigger className="h-7 text-xs font-mono">
-                            <SelectValue placeholder={isLoadingFlows ? "Loading flows..." : "Select a published flow"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableFlows.map((flow) => (
-                              <SelectItem key={flow.id} value={flow.flowId || flow.id}>
-                                {flow.name} ({flow.flowId || flow.id})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          value={btn.flow_id || ""}
-                          onChange={(e) => updateButton(i, "flow_id", e.target.value)}
-                          placeholder="Or paste flow id manually"
-                          className="h-7 text-xs font-mono"
-                        />
-                        <FieldError message={btnErrors?.flow_id?.message} />
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Action</Label>
-                      <div className="flex-1">
-                        <Select value={btn.flow_action || "navigate"} onValueChange={(v) => updateButton(i, "flow_action", v)}>
-                          <SelectTrigger className="h-7 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="navigate">Navigate</SelectItem>
-                            <SelectItem value="data_exchange">Data Exchange</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FieldError message={btnErrors?.flow_action?.message} />
-                      </div>
-                    </div>
-
-                    {btn.flow_action === "navigate" && (
-                      <div className="flex items-start gap-2">
-                        <Label className="text-xs w-16 flex-shrink-0 pt-1.5">Screen</Label>
-                        <div className="flex-1">
-                          <Input
-                            value={btn.navigate_screen || ""}
-                            onChange={(e) => updateButton(i, "navigate_screen", e.target.value)}
-                            placeholder="FIRST_ENTRY_SCREEN"
-                            className="h-7 text-xs font-mono"
-                          />
-                          <FieldError message={btnErrors?.navigate_screen?.message} />
-                        </div>
-                      </div>
-                    )}
-
-                    <FieldHint>Select a published flow ID to avoid runtime send failures.</FieldHint>
-                  </div>
-                )}
               </div>
             </div>
           );
@@ -2155,11 +2643,11 @@ function ButtonsSectionCard({
       </div>
 
       {/* Add button pickers */}
-      {buttons.length < maxButtons && category !== "AUTHENTICATION" && (
+      {buttons.length < maxButtons && (
         <div>
           <p className="text-xs text-muted-foreground mb-2 font-medium">Add a button:</p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {(["QUICK_REPLY", "URL", "PHONE_NUMBER", ...(selectedType === "flow" ? ["FLOW"] : [])] as TemplateButton["type"][]).map((type) => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {allowedButtonTypes.map((type) => {
               const cfg = buttonTypeConfig[type as keyof typeof buttonTypeConfig];
               return (
                 <button

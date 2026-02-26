@@ -214,7 +214,7 @@ export const userRouteList: AppRoute[] = [
     permission: {
       view: "/templates",
       create: "/templates/create",
-      update: "/templates/:templateId/update",
+      update: "/templates/:uuid/edit",
       delete: "/templates",
     },
     sidebarProps: {
@@ -231,9 +231,15 @@ export const userRouteList: AppRoute[] = [
 
       },
       {
-        path: "/templates/:templateId/update",
+        path: "/templates/:uuid/edit",
         element: UserTemplatesUpdate,
         pageKey: "user_update_template",
+        defaultRender: false
+      },
+      {
+        path: "/templates/:templateId/update",
+        element: UserTemplatesUpdate,
+        pageKey: "user_update_template_legacy",
         defaultRender: false
       }
     ],

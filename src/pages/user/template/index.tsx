@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -72,12 +73,7 @@ type SortDir = "asc" | "desc";
 
 export default function TemplatesPage() {
   const navigate = useNavigate();
-
-  // ── State ──
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const queryClient = useQueryClient();
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -98,7 +94,6 @@ export default function TemplatesPage() {
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState<Template | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -106,75 +101,104 @@ export default function TemplatesPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Fetch templates
-  const fetchTemplates = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await listTemplates({
-        limit: pageSize,
-        offset: page * pageSize,
-        ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
-        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      });
-      setTemplates(res.data);
-      setTotal(res.total);
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Failed to load templates"));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [page, pageSize, statusFilter, categoryFilter, debouncedSearch]);
+  const queryParams = useMemo(
+    () => ({
+      limit: pageSize,
+      offset: page * pageSize,
+      ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
+      ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    }),
+    [page, pageSize, statusFilter, categoryFilter, debouncedSearch]
+  );
+
+  const templatesQuery = useQuery({
+    queryKey: ["templates", queryParams],
+    queryFn: () => listTemplates(queryParams),
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
+  });
+
+  const templates = templatesQuery.data?.data || [];
+  const total = templatesQuery.data?.total || 0;
+  const isInitialLoading = templatesQuery.isPending && !templatesQuery.data;
 
   useEffect(() => {
-    fetchTemplates();
-  }, [fetchTemplates]);
+    const nextPage = page + 1;
+    if (!templatesQuery.data) return;
+    if (nextPage * pageSize >= total) return;
+
+    const nextParams = { ...queryParams, offset: nextPage * pageSize };
+    queryClient.prefetchQuery({
+      queryKey: ["templates", nextParams],
+      queryFn: () => listTemplates(nextParams),
+      staleTime: 60 * 1000,
+    });
+  }, [page, pageSize, queryClient, queryParams, templatesQuery.data, total]);
+
+  useEffect(() => {
+    if (!templatesQuery.error) return;
+    toast.error(getApiErrorMessage(templatesQuery.error, "Failed to load templates"));
+  }, [templatesQuery.error, templatesQuery.errorUpdatedAt]);
 
   // Reset page on filter change
   useEffect(() => {
     setPage(0);
   }, [statusFilter, categoryFilter, debouncedSearch, pageSize]);
 
+  const refreshTemplates = () => {
+    queryClient.invalidateQueries({ queryKey: ["templates"] });
+  };
+
   // ── Handlers ──
-  const handleSync = async () => {
-    setIsSyncing(true);
-    const toastId = toast.loading("Syncing templates from Meta...");
-    try {
-      const res = await syncTemplates();
-      toast.success(getApiSuccessMessage(res, "Templates synced successfully"), { id: toastId });
-      fetchTemplates();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Sync failed"), { id: toastId });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
+  const syncMutation = useMutation({
+    mutationFn: () => syncTemplates(),
+    onMutate: () => ({ toastId: toast.loading("Syncing templates from Meta...") }),
+    onSuccess: (res, _none, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Templates synced successfully"), { id: ctx?.toastId });
+      refreshTemplates();
+    },
+    onError: (err, _none, ctx) => {
+      toast.error(getApiErrorMessage(err, "Sync failed"), { id: ctx?.toastId });
+    },
+  });
 
-  const handlePublish = async (template: Template) => {
-    const toastId = toast.loading(`Publishing ${template.name}...`);
-    try {
-      const res = await publishTemplate(template.uuid);
-      toast.success(getApiSuccessMessage(res, "Template published successfully"), { id: toastId });
-      fetchTemplates();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Publish failed"), { id: toastId });
-    }
-  };
+  const publishMutation = useMutation({
+    mutationFn: (template: Template) => publishTemplate(template.uuid),
+    onMutate: (template) => ({ toastId: toast.loading(`Publishing ${template.name}...`) }),
+    onSuccess: (res, _template, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Template published successfully"), { id: ctx?.toastId });
+      refreshTemplates();
+    },
+    onError: (err, _template, ctx) => {
+      toast.error(getApiErrorMessage(err, "Publish failed"), { id: ctx?.toastId });
+    },
+  });
 
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setIsDeleting(true);
-    const toastId = toast.loading(`Deleting ${deleteTarget.name}...`);
-    try {
-      const res = await deleteTemplate(deleteTarget.uuid);
-      toast.success(getApiSuccessMessage(res, "Template deleted"), { id: toastId });
+  const deleteMutation = useMutation({
+    mutationFn: (template: Template) => deleteTemplate(template.uuid),
+    onMutate: (template) => ({ toastId: toast.loading(`Deleting ${template.name}...`) }),
+    onSuccess: (res, _template, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Template deleted"), { id: ctx?.toastId });
       setDeleteTarget(null);
-      fetchTemplates();
-    } catch (err) {
-      toast.error(getApiErrorMessage(err, "Delete failed"), { id: toastId });
-    } finally {
-      setIsDeleting(false);
-    }
+      refreshTemplates();
+    },
+    onError: (err, _template, ctx) => {
+      toast.error(getApiErrorMessage(err, "Delete failed"), { id: ctx?.toastId });
+    },
+  });
+
+  const handleSync = () => {
+    syncMutation.mutate();
+  };
+
+  const handlePublish = (template: Template) => {
+    publishMutation.mutate(template);
+  };
+
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    deleteMutation.mutate(deleteTarget);
   };
 
   const handleSort = (field: SortField) => {
@@ -187,24 +211,43 @@ export default function TemplatesPage() {
   };
 
   // Client-side sort for current page
-  const sortedTemplates = [...templates].sort((a, b) => {
+  const sortedTemplates = useMemo(() => {
+    const list = [...templates];
     const dir = sortDir === "asc" ? 1 : -1;
-    const av = (a as any)[sortField] || "";
-    const bv = (b as any)[sortField] || "";
-    return av.localeCompare(bv) * dir;
-  });
 
-  const totalPages = Math.ceil(total / pageSize);
+    list.sort((a, b) => {
+      const getValue = (item: Template) => {
+        if (sortField === "created_at") {
+          const ts = item.created_at ? new Date(item.created_at).getTime() : 0;
+          return Number.isFinite(ts) ? ts : 0;
+        }
+        return String((item as any)[sortField] || "").toLowerCase();
+      };
+
+      const av = getValue(a);
+      const bv = getValue(b);
+      if (typeof av === "number" && typeof bv === "number") {
+        return (av - bv) * dir;
+      }
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+
+    return list;
+  }, [templates, sortDir, sortField]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasFilters =
     statusFilter !== "ALL" || categoryFilter !== "ALL" || debouncedSearch;
 
   useEffect(() => {
-    if (isLoading) return;
+    if (isInitialLoading) return;
     const maxPage = Math.max(totalPages - 1, 0);
     if (page > maxPage) {
       setPage(maxPage);
     }
-  }, [isLoading, page, totalPages]);
+  }, [isInitialLoading, page, totalPages]);
+
+  const isDeleting = deleteMutation.isPending;
 
   // ── SortHeader ──
   function SortIcon({ field }: { field: SortField }) {
@@ -307,10 +350,10 @@ export default function TemplatesPage() {
                 size="sm"
                 className="h-9 gap-1.5"
                 onClick={handleSync}
-                disabled={isSyncing}
+                disabled={syncMutation.isPending}
               >
-                <RefreshCw className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
-                {isSyncing ? "Syncing..." : "Sync"}
+                <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                {syncMutation.isPending ? "Syncing..." : "Sync"}
               </Button>
             </TooltipTrigger>
             <TooltipContent>Sync templates from Meta</TooltipContent>
@@ -328,7 +371,7 @@ export default function TemplatesPage() {
       </div>
 
       {/* ── Stats strip ── */}
-      {!isLoading && (
+      {!isInitialLoading && (
         <div className="flex gap-4 text-sm text-muted-foreground">
           <span>
             <span className="font-semibold text-foreground">{total}</span>{" "}
@@ -386,7 +429,7 @@ export default function TemplatesPage() {
             </thead>
 
             <tbody className="divide-y divide-border">
-              {isLoading ? (
+              {isInitialLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i}>
                     {Array.from({ length: 6 }).map((_, j) => (
@@ -396,6 +439,26 @@ export default function TemplatesPage() {
                     ))}
                   </tr>
                 ))
+              ) : templatesQuery.isError && sortedTemplates.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center py-16">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <FileText className="w-10 h-10 opacity-30" />
+                      <div>
+                        <p className="font-medium text-sm">Failed to load templates</p>
+                        <p className="text-xs mt-0.5">Please try again</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-1 gap-1.5"
+                        onClick={() => templatesQuery.refetch()}
+                      >
+                        <RefreshCw className="w-4 h-4" /> Retry
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
               ) : sortedTemplates.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="text-center py-16">
@@ -424,10 +487,17 @@ export default function TemplatesPage() {
               ) : (
                 sortedTemplates.map((template) => (
                   <TemplateRow
-                    key={template.uuid}
+                    key={template.uuid || template.id || template.name}
                     template={template}
                     onPreview={() => setPreviewTemplate(template)}
-                    onEdit={() => navigate(`/templates/${template.uuid}/edit`)}
+                    onEdit={() => {
+                      const templateId = template.uuid || template.id;
+                      if (!templateId) {
+                        toast.error("Template ID is missing. Please sync templates and try again.");
+                        return;
+                      }
+                      navigate(`/templates/${templateId}/edit`);
+                    }}
                     onPublish={() => handlePublish(template)}
                     onDelete={() => setDeleteTarget(template)}
                   />
@@ -439,7 +509,7 @@ export default function TemplatesPage() {
       </div>
 
       {/* ── Pagination ── */}
-      {!isLoading && total > 0 && (
+      {!isInitialLoading && total > 0 && (
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <span>Rows per page:</span>

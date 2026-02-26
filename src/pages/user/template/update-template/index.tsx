@@ -26,20 +26,21 @@ function inferTypeId(template: Template): TemplateTypeId {
 
 export default function UpdateTemplatePage() {
   const navigate = useNavigate();
-  const { uuid } = useParams<{ uuid: string }>();
+  const { uuid, templateId } = useParams<{ uuid?: string; templateId?: string }>();
+  const resolvedTemplateId = uuid || templateId;
 
   const {
     data: template,
     isLoading: isLoadingTemplate,
     error: loadError,
   } = useQuery<Template>({
-    queryKey: ["template", uuid],
-    enabled: Boolean(uuid),
+    queryKey: ["template", resolvedTemplateId],
+    enabled: Boolean(resolvedTemplateId),
     queryFn: async () => {
-      if (!uuid) {
+      if (!resolvedTemplateId) {
         throw new Error("Template ID is missing.");
       }
-      const res = await getTemplate(uuid);
+      const res = await getTemplate(resolvedTemplateId);
       const t = (res?.data as any)?.template ?? (res?.data as unknown as Template);
       return t;
     },
@@ -53,7 +54,7 @@ export default function UpdateTemplatePage() {
       values: TemplateFormValues;
       components: TemplateComponent[];
     }) => {
-      if (!uuid) {
+      if (!resolvedTemplateId) {
         throw new Error("Template ID is missing.");
       }
 
@@ -71,7 +72,7 @@ export default function UpdateTemplatePage() {
         throw new Error(firstIssue);
       }
 
-      return updateTemplate(uuid, { category: values.category, components });
+      return updateTemplate(resolvedTemplateId, { category: values.category, components });
     },
   });
 

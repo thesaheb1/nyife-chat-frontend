@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   Plus,
@@ -98,16 +98,22 @@ export default function FlowsPage() {
     setPage(0);
   }, [debouncedSearch, statusFilter, categoryFilter, pageSize]);
 
+  const queryParams = useMemo(
+    () => ({
+      limit: pageSize,
+      offset: page * pageSize,
+      ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
+      ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+    }),
+    [page, pageSize, statusFilter, categoryFilter, debouncedSearch]
+  );
+
   const query = useQuery({
-    queryKey: ["flows", { debouncedSearch, statusFilter, categoryFilter, pageSize, page }],
-    queryFn: () =>
-      listFlows({
-        limit: pageSize,
-        offset: page * pageSize,
-        ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
-        ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      }),
+    queryKey: ["flows", queryParams],
+    queryFn: () => listFlows(queryParams),
+    placeholderData: keepPreviousData,
+    staleTime: 60 * 1000,
   });
 
   const refresh = () => {
@@ -183,14 +189,33 @@ export default function FlowsPage() {
   const total = query.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasFilters = statusFilter !== "ALL" || categoryFilter !== "ALL" || debouncedSearch;
+  const isInitialLoading = query.isPending && !query.data;
 
   useEffect(() => {
-    if (query.isLoading) return;
+    const nextPage = page + 1;
+    if (!query.data) return;
+    if (nextPage * pageSize >= total) return;
+
+    const nextParams = { ...queryParams, offset: nextPage * pageSize };
+    queryClient.prefetchQuery({
+      queryKey: ["flows", nextParams],
+      queryFn: () => listFlows(nextParams),
+      staleTime: 60 * 1000,
+    });
+  }, [page, pageSize, query.data, queryClient, queryParams, total]);
+
+  useEffect(() => {
+    if (!query.error) return;
+    toast.error(getApiErrorMessage(query.error, "Failed to load flows"));
+  }, [query.error, query.errorUpdatedAt]);
+
+  useEffect(() => {
+    if (isInitialLoading) return;
     const maxPage = Math.max(totalPages - 1, 0);
     if (page > maxPage) {
       setPage(maxPage);
     }
-  }, [page, totalPages, query.isLoading]);
+  }, [isInitialLoading, page, totalPages]);
 
   const sortedFlows = useMemo(() => {
     const list = [...flows];
@@ -328,7 +353,7 @@ export default function FlowsPage() {
         </div>
       </div>
 
-      {!query.isLoading && (
+      {!isInitialLoading && (
         <div className="flex gap-4 text-sm text-muted-foreground">
           <span>
             <span className="font-semibold text-foreground">{total}</span> {total === 1 ? "flow" : "flows"}
@@ -368,7 +393,7 @@ export default function FlowsPage() {
             </thead>
 
             <tbody className="divide-y divide-border">
-              {query.isLoading ? (
+              {isInitialLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i}>
                     {Array.from({ length: 6 }).map((__, j) => (
@@ -378,6 +403,21 @@ export default function FlowsPage() {
                     ))}
                   </tr>
                 ))
+              ) : query.isError && sortedFlows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                      <FileText className="h-10 w-10 opacity-30" />
+                      <div>
+                        <p className="text-sm font-medium">Failed to load flows</p>
+                        <p className="mt-0.5 text-xs">Please try again</p>
+                      </div>
+                      <Button size="sm" variant="outline" className="mt-1 gap-1.5" onClick={() => query.refetch()}>
+                        <RefreshCw className="h-4 w-4" /> Retry
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
               ) : sortedFlows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-16 text-center">
@@ -420,7 +460,7 @@ export default function FlowsPage() {
         </div>
       </div>
 
-      {!query.isLoading && total > 0 && (
+      {!isInitialLoading && total > 0 && (
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2 text-muted-foreground">
             <span>Rows per page:</span>

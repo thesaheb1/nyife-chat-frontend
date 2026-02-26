@@ -8,6 +8,7 @@ import App from './app/App'
 import ToastProvider from './app/providers/toast-provider.tsx'
 import { ThemeProvider } from './components/theme-provider'
 import { TooltipProvider } from './components/ui/tooltip.tsx'
+import { ApiHttpError } from './lib/utils/api-response'
 import './index.css'
 import { persistor, store } from './redux/store/store'
 
@@ -42,7 +43,29 @@ const bootstrapTheme = () => {
 
 bootstrapTheme()
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000,
+      gcTime: 15 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: (failureCount, error) => {
+        if (
+          error instanceof ApiHttpError &&
+          error.status >= 400 &&
+          error.status < 500 &&
+          error.status !== 429
+        ) {
+          return false
+        }
+        return failureCount < 2
+      },
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+})
 
 const rootElement = document.getElementById('root')
 
