@@ -36,6 +36,12 @@ const normalizeFlow = (input: any): FlowTemplate => ({
   version: input?.version,
 });
 
+type FlowPreviewData = {
+  url: string;
+  expires_at?: string;
+  raw?: unknown;
+};
+
 export async function listFlows(params: FlowListParams = {}): Promise<FlowListResponse> {
   const qs = new URLSearchParams({
     limit: String(params.limit ?? 20),
@@ -214,4 +220,60 @@ export async function deleteFlow(id: string): Promise<ApiResponse<unknown>> {
     headers: getHeaders(),
   });
   return handleApiResponse(res);
+}
+
+export async function getFlowPreview(params: {
+  id: string;
+  metaFlowId?: string;
+  invalidate?: boolean;
+}): Promise<ApiResponse<FlowPreviewData>> {
+  const flowId = (params.metaFlowId || params.id || "").trim();
+  if (!flowId) {
+    throw new Error("Flow ID is required to build preview URL.");
+  }
+
+  const accessToken =
+    import.meta.env.VITE_META_ACCESS_TOKEN ||
+    localStorage.getItem("meta_access_token") ||
+    localStorage.getItem("meta_user_access_token") ||
+    "";
+
+  if (!accessToken.trim()) {
+    throw new Error("Meta access token is missing. Set VITE_META_ACCESS_TOKEN in .env.");
+  }
+
+  const invalidate = params.invalidate ?? false;
+  const qs = new URLSearchParams({
+    fields: `preview.invalidate(${invalidate ? "true" : "false"})`,
+    access_token: accessToken.trim(),
+  });
+
+  const res = await fetch(
+    `https://graph.facebook.com/v18.0/${encodeURIComponent(flowId)}?${qs.toString()}`,
+    {
+      method: "GET",
+    }
+  );
+
+  const payload = await handleApiResponse<any>(res);
+  const preview = payload?.preview && typeof payload.preview === "object" ? payload.preview : {};
+  const url =
+    (typeof preview.preview_url === "string" ? preview.preview_url : undefined) ||
+    (typeof payload?.preview_url === "string" ? payload.preview_url : undefined);
+  const expiresAt =
+    (typeof preview.expires_at === "string" ? preview.expires_at : undefined) ||
+    (typeof payload?.expires_at === "string" ? payload.expires_at : undefined);
+
+  if (!url) {
+    throw new Error("Meta preview URL not found in Graph API response.");
+  }
+
+  return {
+    ...(payload || {}),
+    data: {
+      url,
+      expires_at: expiresAt,
+      raw: payload,
+    },
+  };
 }

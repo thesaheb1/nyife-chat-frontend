@@ -20,6 +20,7 @@ import {
   ArrowUp,
   ArrowDown,
   Copy,
+  Eye,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   cloneFlow,
   deleteFlow,
+  getFlowPreview,
   listFlows,
   publishFlow,
   retireFlow,
@@ -67,6 +69,7 @@ const PAGE_SIZES = [10, 20, 50];
 
 type SortField = "name" | "category" | "status" | "createdAt";
 type SortDir = "asc" | "desc";
+const FLOW_PREVIEW_SCALE = 1;
 
 export default function FlowsPage() {
   const navigate = useNavigate();
@@ -88,6 +91,9 @@ export default function FlowsPage() {
   const [cloneKey, setCloneKey] = useState("");
 
   const [deleteTarget, setDeleteTarget] = useState<FlowTemplate | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<FlowTemplate | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewExpiry, setPreviewExpiry] = useState<string | undefined>();
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400);
@@ -185,6 +191,24 @@ export default function FlowsPage() {
     onError: (err, _id, ctx) => toast.error(getApiErrorMessage(err, "Delete failed"), { id: ctx?.toastId }),
   });
 
+  const previewMutation = useMutation({
+    mutationFn: (flow: FlowTemplate) =>
+      getFlowPreview({
+        id: flow.id,
+        metaFlowId: flow.flowId,
+        invalidate: false,
+      }),
+    onSuccess: (res) => {
+      setPreviewUrl(res?.data?.url || "");
+      setPreviewExpiry(res?.data?.expires_at);
+    },
+    onError: (err) => {
+      setPreviewUrl("");
+      setPreviewExpiry(undefined);
+      toast.error(getApiErrorMessage(err, "Failed to generate flow preview"));
+    },
+  });
+
   const flows = query.data?.data || [];
   const total = query.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -254,6 +278,27 @@ export default function FlowsPage() {
     if (sortField !== field) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
     return sortDir === "asc" ? <ArrowUp className="h-3.5 w-3.5 text-primary" /> : <ArrowDown className="h-3.5 w-3.5 text-primary" />;
   }
+
+  const handlePreviewOpen = (flow: FlowTemplate) => {
+    if (!(flow.flowId || "").trim()) {
+      toast.error("Meta Flow ID not found for this row. Sync flow status and try again.");
+      return;
+    }
+
+    previewMutation.reset();
+    setPreviewTarget(flow);
+    setPreviewUrl("");
+    setPreviewExpiry(undefined);
+    previewMutation.mutate(flow);
+  };
+
+  const handlePreviewClose = (open: boolean) => {
+    if (open) return;
+    previewMutation.reset();
+    setPreviewTarget(null);
+    setPreviewUrl("");
+    setPreviewExpiry(undefined);
+  };
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -346,7 +391,7 @@ export default function FlowsPage() {
             <TooltipContent>Sync flow statuses from Meta</TooltipContent>
           </Tooltip>
 
-          <Button size="sm" className="h-9 gap-1.5" onClick={() => navigate("/flows/create")}> 
+          <Button size="sm" className="h-9 gap-1.5" onClick={() => navigate("/flows/create")}>
             <Plus className="h-4 w-4" />
             New Flow
           </Button>
@@ -442,6 +487,7 @@ export default function FlowsPage() {
                   <FlowRow
                     key={flow.id}
                     flow={flow}
+                    onPreview={() => handlePreviewOpen(flow)}
                     onEdit={() => navigate(`/flows/${flow.id}/update`)}
                     onPublish={() => publishMutation.mutate(flow.id)}
                     onRetire={() => retireMutation.mutate(flow.id)}
@@ -506,6 +552,76 @@ export default function FlowsPage() {
         </div>
       )}
 
+      <Dialog open={Boolean(previewTarget)} onOpenChange={handlePreviewClose}>
+        <DialogContent className="w-[min(96vw,1200px)] max-w-none h-[95vh] overflow-hidden p-4 sm:p-5">
+          <DialogHeader className="shrink-0 pr-8">
+            <DialogTitle className="font-mono text-base">
+              {previewTarget?.name || "Flow Preview"}
+            </DialogTitle>
+            <DialogDescription>
+              {previewTarget?.flowId ? `Meta Flow ID: ${previewTarget.flowId}` : "Generating Meta preview"}
+              {previewExpiry ? ` · Expires: ${new Date(previewExpiry).toLocaleString()}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0">
+            {previewMutation.isPending ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Generating preview...
+                </div>
+              </div>
+            ) : previewMutation.isError ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                <p className="text-sm font-medium text-foreground">Unable to generate preview</p>
+                <p className="max-w-md text-xs text-muted-foreground">
+                  {getApiErrorMessage(previewMutation.error, "Flow preview request failed")}
+                </p>
+                {previewTarget ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-1 gap-1.5"
+                    onClick={() => previewMutation.mutate(previewTarget)}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                    Retry
+                  </Button>
+                ) : null}
+              </div>
+            ) : previewUrl ? (
+              <div className="flex h-[80vh] flex-col gap-2">
+                <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-muted/20">
+                  <iframe
+                    title={previewTarget?.name || "Flow preview"}
+                    src={previewUrl}
+                    className="absolute left-0 top-0 border-0"
+                    style={{
+                      width: `${100 / FLOW_PREVIEW_SCALE}%`,
+                      height: `${100 / FLOW_PREVIEW_SCALE}%`,
+                      transform: `scale(${FLOW_PREVIEW_SCALE})`,
+                      transformOrigin: "top left",
+                    }}
+                  />
+                </div>
+                <div className="shrink-0 flex justify-end">
+                  <a href={previewUrl} target="_blank" rel="noopener noreferrer">
+                    <Button size="sm" variant="outline">
+                      Open in new tab
+                    </Button>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Preview URL was not returned by the API.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(cloneTarget)} onOpenChange={(open) => !open && setCloneTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -562,6 +678,7 @@ export default function FlowsPage() {
 
 interface FlowRowProps {
   flow: FlowTemplate;
+  onPreview: () => void;
   onEdit: () => void;
   onPublish: () => void;
   onRetire: () => void;
@@ -572,6 +689,7 @@ interface FlowRowProps {
 
 function FlowRow({
   flow,
+  onPreview,
   onEdit,
   onPublish,
   onRetire,
@@ -619,14 +737,32 @@ function FlowRow({
       <td className="px-4 py-3 text-xs text-muted-foreground">
         {flow.createdAt
           ? new Date(flow.createdAt).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
           : "-"}
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onPreview}>
+                <Eye className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Preview</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onEdit}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit</TooltipContent>
+          </Tooltip>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">
