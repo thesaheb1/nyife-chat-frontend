@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import TemplateForm from "@/components/templates/TemplateForm";
 import TemplateStatusBadge from "@/components/templates/TemplateStatusBadge";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import { getTemplate, updateTemplate, validateTemplatePayload } from "@/services/template.service";
 import type { Template, TemplateComponent } from "@/types/template.types";
 import type { TemplateFormValues } from "@/components/templates/TemplateForm";
@@ -80,11 +81,11 @@ export default function UpdateTemplatePage() {
   ) => {
     const toastId = toast.loading("Saving changes…");
     try {
-      await updateTemplateMutation.mutateAsync({ values, components });
-      toast.success("Template updated successfully!", { id: toastId });
+      const res = await updateTemplateMutation.mutateAsync({ values, components });
+      toast.success(getApiSuccessMessage(res, "Template updated successfully!"), { id: toastId });
       navigate("/templates");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update template", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to update template"), { id: toastId });
     }
   };
 

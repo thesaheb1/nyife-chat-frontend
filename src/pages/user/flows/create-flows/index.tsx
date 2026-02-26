@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import FlowTemplateForm from "@/components/flows/FlowTemplateForm";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import { createFlow } from "@/services/flow.service";
 import type { CreateFlowPayload, UpdateFlowPayload } from "@/types/flow.types";
 
@@ -16,11 +17,11 @@ export default function CreateFlows() {
   const handleSubmit = async (payload: CreateFlowPayload | UpdateFlowPayload) => {
     const toastId = toast.loading("Creating flow...");
     try {
-      await createMutation.mutateAsync(payload as CreateFlowPayload);
-      toast.success("Flow created successfully", { id: toastId });
+      const res = await createMutation.mutateAsync(payload as CreateFlowPayload);
+      toast.success(getApiSuccessMessage(res, "Flow created successfully"), { id: toastId });
       navigate("/flows");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to create flow", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to create flow"), { id: toastId });
     }
   };
 

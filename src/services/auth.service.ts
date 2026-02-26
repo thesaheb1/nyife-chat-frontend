@@ -1,3 +1,5 @@
+import { handleApiResponse } from "@/lib/utils/api-response";
+
 export interface ApiResponse<T = unknown> {
   success?: boolean;
   message?: string;
@@ -63,14 +65,11 @@ const getHeaders = (): HeadersInit => ({
   "Content-Type": "application/json",
 });
 
-async function parseResponse<T>(response: Response): Promise<ApiResponse<T>> {
-  const result = (await response.json().catch(() => ({}))) as ApiResponse<T>;
-
-  if (!response.ok || !result.success) {
-    throw new Error(result.message || `Request failed with status ${response.status}`);
-  }
-
-  return result;
+async function parseResponse<T>(
+  response: Response,
+  fallbackMessage: string,
+): Promise<ApiResponse<T>> {
+  return handleApiResponse<ApiResponse<T>>(response, fallbackMessage);
 }
 
 async function requestJson<T>(
@@ -84,7 +83,7 @@ async function requestJson<T>(
     body: JSON.stringify(payload),
   });
 
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, "Request failed");
 }
 
 export async function loginAdmin(
@@ -96,10 +95,10 @@ export async function loginAdmin(
     body: JSON.stringify(payload),
   });
 
-  const result = (await response.json().catch(() => ({}))) as LoginApiRawResponse;
+  const result = await handleApiResponse<LoginApiRawResponse>(response, "Login failed");
 
-  if (!response.ok || !result.token || !result.user?.email || !result.user?.role) {
-    throw new Error(result.message || `Login failed with status ${response.status}`);
+  if (!result.token || !result.user?.email || !result.user?.role) {
+    throw new Error(result.message || "Login failed");
   }
 
   return {

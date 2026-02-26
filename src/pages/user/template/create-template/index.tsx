@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TemplateForm from "@/components/templates/TemplateForm";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import { createTemplate, validateTemplatePayload } from "@/services/template.service";
 import type { TemplateFormValues } from "@/components/templates/TemplateForm";
 import type { TemplateComponent } from "@/types/template.types";
@@ -41,14 +42,14 @@ export default function CreateTemplatePage() {
   ) => {
     const toastId = toast.loading("Submitting template to Meta for approval…");
     try {
-      await createTemplateMutation.mutateAsync({ values, components });
-      toast.success(
-        "Template submitted! Meta usually approves within a few minutes.",
-        { id: toastId }
-      );
+      const res = await createTemplateMutation.mutateAsync({ values, components });
+      toast.success(getApiSuccessMessage(
+        res,
+        "Template submitted! Meta usually approves within a few minutes."
+      ), { id: toastId });
       navigate("/templates");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to create template", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to create template"), { id: toastId });
     }
   };
 

@@ -109,6 +109,7 @@ export interface FlowListParams {
   limit?: number;
   offset?: number;
   status?: string;
+  category?: string;
   search?: string;
 }
 

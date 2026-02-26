@@ -52,6 +52,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import TemplateStatusBadge from "@/components/templates/TemplateStatusBadge";
 import WhatsAppPreview from "@/components/templates/WhatsAppPreview";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import {
   listTemplates,
   deleteTemplate,
@@ -116,13 +117,10 @@ export default function TemplatesPage() {
         ...(categoryFilter !== "ALL" ? { category: categoryFilter } : {}),
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
       });
-      // Handle both { data: Template[] } and { data: { data: Template[] } } shapes
-      const items: Template[] = Array.isArray(res?.data) ? res.data : (res as any)?.data?.data ?? [];
-      const t = (res as any)?.total ?? (res as any)?.data?.total ?? items.length;
-      setTemplates(items);
-      setTotal(t);
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to load templates");
+      setTemplates(res.data);
+      setTotal(res.total);
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to load templates"));
     } finally {
       setIsLoading(false);
     }
@@ -142,11 +140,11 @@ export default function TemplatesPage() {
     setIsSyncing(true);
     const toastId = toast.loading("Syncing templates from Meta...");
     try {
-      await syncTemplates();
-      toast.success("Templates synced successfully", { id: toastId });
+      const res = await syncTemplates();
+      toast.success(getApiSuccessMessage(res, "Templates synced successfully"), { id: toastId });
       fetchTemplates();
-    } catch (err: any) {
-      toast.error(err?.message || "Sync failed", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Sync failed"), { id: toastId });
     } finally {
       setIsSyncing(false);
     }
@@ -155,11 +153,11 @@ export default function TemplatesPage() {
   const handlePublish = async (template: Template) => {
     const toastId = toast.loading(`Publishing ${template.name}...`);
     try {
-      await publishTemplate(template.uuid);
-      toast.success("Template published successfully", { id: toastId });
+      const res = await publishTemplate(template.uuid);
+      toast.success(getApiSuccessMessage(res, "Template published successfully"), { id: toastId });
       fetchTemplates();
-    } catch (err: any) {
-      toast.error(err?.message || "Publish failed", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Publish failed"), { id: toastId });
     }
   };
 
@@ -168,12 +166,12 @@ export default function TemplatesPage() {
     setIsDeleting(true);
     const toastId = toast.loading(`Deleting ${deleteTarget.name}...`);
     try {
-      await deleteTemplate(deleteTarget.uuid);
-      toast.success("Template deleted", { id: toastId });
+      const res = await deleteTemplate(deleteTarget.uuid);
+      toast.success(getApiSuccessMessage(res, "Template deleted"), { id: toastId });
       setDeleteTarget(null);
       fetchTemplates();
-    } catch (err: any) {
-      toast.error(err?.message || "Delete failed", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Delete failed"), { id: toastId });
     } finally {
       setIsDeleting(false);
     }
@@ -199,6 +197,14 @@ export default function TemplatesPage() {
   const totalPages = Math.ceil(total / pageSize);
   const hasFilters =
     statusFilter !== "ALL" || categoryFilter !== "ALL" || debouncedSearch;
+
+  useEffect(() => {
+    if (isLoading) return;
+    const maxPage = Math.max(totalPages - 1, 0);
+    if (page > maxPage) {
+      setPage(maxPage);
+    }
+  }, [isLoading, page, totalPages]);
 
   // ── SortHeader ──
   function SortIcon({ field }: { field: SortField }) {
@@ -484,7 +490,7 @@ export default function TemplatesPage() {
 
       {/* ── Preview Dialog ── */}
       <Dialog open={!!previewTemplate} onOpenChange={() => setPreviewTemplate(null)}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl h-11/12 overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-mono text-base">{previewTemplate?.name}</DialogTitle>
             <DialogDescription className="flex items-center gap-2 mt-1">
@@ -502,7 +508,7 @@ export default function TemplatesPage() {
               />
             </div>
           )}
-          {previewTemplate?.rejection_reason && (
+          {previewTemplate?.rejection_reason && previewTemplate.rejection_reason !== "NONE" && (
             <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
               <p className="text-xs text-destructive font-medium">Rejection Reason</p>
               <p className="text-xs text-destructive/80 mt-0.5">{previewTemplate.rejection_reason}</p>

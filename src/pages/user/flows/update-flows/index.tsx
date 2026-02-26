@@ -6,6 +6,7 @@ import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import FlowTemplateForm from "@/components/flows/FlowTemplateForm";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import { getFlow, updateFlow } from "@/services/flow.service";
 import type { CreateFlowPayload, FlowTemplate, UpdateFlowPayload } from "@/types/flow.types";
 
@@ -33,11 +34,11 @@ export default function UpdateFlows() {
   const handleSubmit = async (payload: CreateFlowPayload | UpdateFlowPayload) => {
     const toastId = toast.loading("Saving flow...");
     try {
-      await updateMutation.mutateAsync(payload as UpdateFlowPayload);
-      toast.success("Flow updated successfully", { id: toastId });
+      const res = await updateMutation.mutateAsync(payload as UpdateFlowPayload);
+      toast.success(getApiSuccessMessage(res, "Flow updated successfully"), { id: toastId });
       navigate("/flows");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update flow", { id: toastId });
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to update flow"), { id: toastId });
     }
   };
 

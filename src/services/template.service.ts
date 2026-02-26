@@ -9,6 +9,7 @@ import type {
   TemplateCapabilities,
   FlowListItem,
 } from "@/types/template.types";
+import { handleApiResponse } from "@/lib/utils/api-response";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3003";
 
@@ -25,13 +26,23 @@ function getHeaders(): Record<string, string> {
   };
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: "Request failed" }));
-    throw new Error(err?.message || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
+const normalizeTemplate = (input: any): Template => ({
+  uuid: input?.uuid || input?.id || "",
+  id: input?.id || input?.uuid,
+  name: input?.name || "",
+  category: input?.category || "UTILITY",
+  language: input?.language || "en_US",
+  status: input?.status || "PENDING",
+  components: Array.isArray(input?.components) ? input.components : [],
+  meta_template_id: input?.meta_template_id || input?.metaTemplateId,
+  created_at: input?.created_at || input?.createdAt || "",
+  updated_at: input?.updated_at || input?.updatedAt || "",
+  rejection_reason:
+    input?.rejection_reason ||
+    input?.rejectionReason ||
+    input?.rawMetaResponse?.rejected_reason ||
+    input?.rawMetaResponse?.rejection_reason,
+});
 
 // ── List Templates ──────────────────────────────────────────
 export async function listTemplates(
@@ -47,7 +58,39 @@ export async function listTemplates(
   const res = await fetch(`${BASE_URL}/api/templates?${qs}`, {
     headers: getHeaders(),
   });
-  return handleResponse<ListTemplatesResponse>(res);
+  const payload = await handleApiResponse<any>(res);
+
+  const rows =
+    payload?.data?.rows ||
+    payload?.data?.data ||
+    payload?.rows ||
+    payload?.data ||
+    payload?.items ||
+    [];
+
+  const limit =
+    Number(payload?.pagination?.limit) ||
+    Number(payload?.meta?.pagination?.limit) ||
+    Number(params.limit ?? 20);
+  const offset =
+    Number(payload?.pagination?.offset) ||
+    Number(payload?.meta?.pagination?.offset) ||
+    Number(params.offset ?? 0);
+  const total =
+    Number(payload?.pagination?.total) ||
+    Number(payload?.meta?.pagination?.total) ||
+    Number(payload?.total) ||
+    Number(payload?.data?.total) ||
+    0;
+
+  const data = Array.isArray(rows) ? rows.map(normalizeTemplate) : [];
+
+  return {
+    data,
+    total: Number.isFinite(total) && total >= 0 ? total : data.length,
+    limit: Number.isFinite(limit) && limit > 0 ? limit : Number(params.limit ?? 20),
+    offset: Number.isFinite(offset) && offset >= 0 ? offset : Number(params.offset ?? 0),
+  };
 }
 
 // ── Get Template ────────────────────────────────────────────
@@ -57,7 +100,17 @@ export async function getTemplate(
   const res = await fetch(`${BASE_URL}/api/templates/${uuid}`, {
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  const payload = await handleApiResponse<any>(res);
+  const raw = payload?.data?.template || payload?.data || payload;
+  const existingData = payload?.data && typeof payload.data === "object" ? payload.data : {};
+
+  return {
+    ...payload,
+    data: {
+      ...existingData,
+      template: normalizeTemplate(raw),
+    },
+  };
 }
 
 // ── Create Template ─────────────────────────────────────────
@@ -69,7 +122,17 @@ export async function createTemplate(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  return handleResponse(res);
+  const data = await handleApiResponse<any>(res);
+  const raw = data?.data?.template || data?.data || data;
+  const existingData = data?.data && typeof data.data === "object" ? data.data : {};
+
+  return {
+    ...data,
+    data: {
+      ...existingData,
+      template: normalizeTemplate(raw),
+    },
+  };
 }
 
 // ── Update Template (PUT) ───────────────────────────────────
@@ -82,7 +145,17 @@ export async function updateTemplate(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  return handleResponse(res);
+  const data = await handleApiResponse<any>(res);
+  const raw = data?.data?.template || data?.data || data;
+  const existingData = data?.data && typeof data.data === "object" ? data.data : {};
+
+  return {
+    ...data,
+    data: {
+      ...existingData,
+      template: normalizeTemplate(raw),
+    },
+  };
 }
 
 // ── Delete Template ─────────────────────────────────────────
@@ -93,7 +166,7 @@ export async function deleteTemplate(
     method: "DELETE",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── Sync Templates From Meta ────────────────────────────────
@@ -102,7 +175,7 @@ export async function syncTemplates(): Promise<ApiResponse<unknown>> {
     method: "POST",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── Publish Template ────────────────────────────────────────
@@ -113,7 +186,7 @@ export async function publishTemplate(
     method: "POST",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── Validate Template Payload ──────────────────────────────
@@ -125,7 +198,7 @@ export async function validateTemplatePayload(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── Get Template Capabilities ──────────────────────────────
@@ -133,7 +206,7 @@ export async function getTemplateCapabilities(): Promise<ApiResponse<TemplateCap
   const res = await fetch(`${BASE_URL}/api/templates/capabilities`, {
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── List Flows (for FLOW button selection) ────────────────
@@ -150,7 +223,7 @@ export async function listFlows(
   const res = await fetch(`${BASE_URL}/flows?${qs}`, {
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 // ── Upload Media ────────────────────────────────────────────
@@ -173,7 +246,7 @@ export async function uploadMedia(file: File): Promise<{ header_handle: string }
     },
     body: formData,
   });
-  const data = await handleResponse<ApiResponse<{ header_handle: string; headerHandle: string }>>(res);
+  const data = await handleApiResponse<ApiResponse<{ header_handle: string; headerHandle: string }>>(res);
   return {
     header_handle: data.data?.header_handle || data.data?.headerHandle || "",
   };

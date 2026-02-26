@@ -7,7 +7,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Eye,
   Pencil,
   MoreHorizontal,
   UploadCloud,
@@ -51,7 +50,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { FlowScreenPreview } from "@/components/flows/FlowTemplateForm";
 
 import {
   cloneFlow,
@@ -62,6 +60,7 @@ import {
   syncFlowStatuses,
   syncFlowStatus,
 } from "@/services/flow.service";
+import { getApiErrorMessage, getApiSuccessMessage } from "@/lib/utils/api-response";
 import { FLOW_CATEGORIES, type FlowCategory, type FlowStatus, type FlowTemplate } from "@/types/flow.types";
 
 const PAGE_SIZES = [10, 20, 50];
@@ -83,10 +82,6 @@ export default function FlowsPage() {
 
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  const [previewFlow, setPreviewFlow] = useState<FlowTemplate | null>(null);
-  const [previewScreenKey, setPreviewScreenKey] = useState("");
-  const [previewHistory, setPreviewHistory] = useState<string[]>([]);
 
   const [cloneTarget, setCloneTarget] = useState<FlowTemplate | null>(null);
   const [cloneName, setCloneName] = useState("");
@@ -121,67 +116,81 @@ export default function FlowsPage() {
 
   const publishMutation = useMutation({
     mutationFn: (id: string) => publishFlow(id),
-    onSuccess: () => {
-      toast.success("Flow published successfully");
+    onMutate: () => ({ toastId: toast.loading("Publishing flow...") }),
+    onSuccess: (res, _id, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow published successfully"), { id: ctx?.toastId });
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Publish failed"),
+    onError: (err, _id, ctx) => toast.error(getApiErrorMessage(err, "Publish failed"), { id: ctx?.toastId }),
   });
 
   const retireMutation = useMutation({
     mutationFn: (id: string) => retireFlow(id),
-    onSuccess: () => {
-      toast.success("Flow retired successfully");
+    onMutate: () => ({ toastId: toast.loading("Retiring flow...") }),
+    onSuccess: (res, _id, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow retired successfully"), { id: ctx?.toastId });
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Retire failed"),
+    onError: (err, _id, ctx) => toast.error(getApiErrorMessage(err, "Retire failed"), { id: ctx?.toastId }),
   });
 
   const syncOneMutation = useMutation({
     mutationFn: (id: string) => syncFlowStatus(id),
-    onSuccess: () => {
-      toast.success("Flow status synced");
+    onMutate: () => ({ toastId: toast.loading("Syncing flow status...") }),
+    onSuccess: (res, _id, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow status synced"), { id: ctx?.toastId });
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Sync failed"),
+    onError: (err, _id, ctx) => toast.error(getApiErrorMessage(err, "Sync failed"), { id: ctx?.toastId }),
   });
 
   const syncAllMutation = useMutation({
     mutationFn: () => syncFlowStatuses(100, 0, false),
-    onSuccess: () => {
-      toast.success("Flow statuses synced");
+    onMutate: () => ({ toastId: toast.loading("Syncing all flow statuses...") }),
+    onSuccess: (res, _none, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow statuses synced"), { id: ctx?.toastId });
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Sync failed"),
+    onError: (err, _none, ctx) => toast.error(getApiErrorMessage(err, "Sync failed"), { id: ctx?.toastId }),
   });
 
   const cloneMutation = useMutation({
     mutationFn: ({ id, name, template_key }: { id: string; name: string; template_key: string }) =>
       cloneFlow(id, { name, template_key }),
-    onSuccess: () => {
-      toast.success("Flow cloned");
+    onMutate: ({ name }) => ({ toastId: toast.loading(`Cloning ${name}...`) }),
+    onSuccess: (res, _vars, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow cloned"), { id: ctx?.toastId });
       setCloneTarget(null);
       setCloneName("");
       setCloneKey("");
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Clone failed"),
+    onError: (err, _vars, ctx) => toast.error(getApiErrorMessage(err, "Clone failed"), { id: ctx?.toastId }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteFlow(id),
-    onSuccess: () => {
-      toast.success("Flow deleted");
+    onMutate: () => ({ toastId: toast.loading("Deleting flow...") }),
+    onSuccess: (res, _id, ctx) => {
+      toast.success(getApiSuccessMessage(res, "Flow deleted"), { id: ctx?.toastId });
       setDeleteTarget(null);
       refresh();
     },
-    onError: (err: Error) => toast.error(err.message || "Delete failed"),
+    onError: (err, _id, ctx) => toast.error(getApiErrorMessage(err, "Delete failed"), { id: ctx?.toastId }),
   });
 
   const flows = query.data?.data || [];
   const total = query.data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const hasFilters = statusFilter !== "ALL" || categoryFilter !== "ALL" || debouncedSearch;
+
+  useEffect(() => {
+    if (query.isLoading) return;
+    const maxPage = Math.max(totalPages - 1, 0);
+    if (page > maxPage) {
+      setPage(maxPage);
+    }
+  }, [page, totalPages, query.isLoading]);
 
   const sortedFlows = useMemo(() => {
     const list = [...flows];
@@ -206,43 +215,6 @@ export default function FlowsPage() {
 
     return list;
   }, [flows, sortField, sortDir]);
-
-  const previewScreen = useMemo(() => {
-    if (!previewFlow) return undefined;
-    return (
-      previewFlow.screens.find((s) => s.key === previewScreenKey) ||
-      previewFlow.screens.find((s) => s.is_entry_point) ||
-      previewFlow.screens[0]
-    );
-  }, [previewFlow, previewScreenKey]);
-
-  useEffect(() => {
-    if (!previewFlow) return;
-    const startKey = previewFlow.screens.find((s) => s.is_entry_point)?.key || previewFlow.screens[0]?.key || "";
-    setPreviewScreenKey(startKey);
-    setPreviewHistory(startKey ? [startKey] : []);
-  }, [previewFlow]);
-
-  const handlePreviewBack = () => {
-    setPreviewHistory((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.slice(0, -1);
-      const target = next[next.length - 1];
-      if (target) setPreviewScreenKey(target);
-      return next;
-    });
-  };
-
-  const handlePreviewNavigate = (action: FlowTemplate["screens"][number]["actions"][number]) => {
-    if (action.type === "previous_screen") {
-      handlePreviewBack();
-      return;
-    }
-    if (action.type === "next_screen" && action.target_screen_key) {
-      setPreviewScreenKey(action.target_screen_key);
-      setPreviewHistory((prev) => [...prev, action.target_screen_key as string]);
-    }
-  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -386,7 +358,6 @@ export default function FlowsPage() {
                     Status <SortIcon field="status" />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left font-medium text-muted-foreground">Screens</th>
                 <th className="px-4 py-3 text-left font-medium text-muted-foreground">
                   <button className="flex items-center gap-1.5 transition-colors hover:text-foreground" onClick={() => handleSort("createdAt")}>
                     Created <SortIcon field="createdAt" />
@@ -400,7 +371,7 @@ export default function FlowsPage() {
               {query.isLoading ? (
                 Array.from({ length: 8 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
+                    {Array.from({ length: 6 }).map((__, j) => (
                       <td key={j} className="px-4 py-3">
                         <Skeleton className="h-4 w-full" />
                       </td>
@@ -409,7 +380,7 @@ export default function FlowsPage() {
                 ))
               ) : sortedFlows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-16 text-center">
+                  <td colSpan={6} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3 text-muted-foreground">
                       <FileText className="h-10 w-10 opacity-30" />
                       <div>
@@ -431,7 +402,6 @@ export default function FlowsPage() {
                   <FlowRow
                     key={flow.id}
                     flow={flow}
-                    onPreview={() => setPreviewFlow(flow)}
                     onEdit={() => navigate(`/flows/${flow.id}/update`)}
                     onPublish={() => publishMutation.mutate(flow.id)}
                     onRetire={() => retireMutation.mutate(flow.id)}
@@ -496,60 +466,6 @@ export default function FlowsPage() {
         </div>
       )}
 
-      <Dialog
-        open={Boolean(previewFlow)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPreviewFlow(null);
-            setPreviewHistory([]);
-          }
-        }}
-      >
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{previewFlow?.name}</DialogTitle>
-            <DialogDescription>{previewFlow?.description || "Flow preview"}</DialogDescription>
-          </DialogHeader>
-
-          {previewFlow && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-[240px_1fr]">
-              <div className="rounded-lg border border-border p-2">
-                <p className="mb-2 text-xs font-semibold text-muted-foreground">Screens</p>
-                <div className="space-y-1">
-                  {previewFlow.screens.map((screen) => (
-                    <button
-                      type="button"
-                      key={screen.key}
-                      className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${
-                        previewScreen?.key === screen.key ? "border-primary bg-primary/10 text-primary" : "border-border"
-                      }`}
-                      onClick={() => {
-                        setPreviewScreenKey(screen.key);
-                        setPreviewHistory([screen.key]);
-                      }}
-                    >
-                      {screen.title}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border p-3">
-                <FlowScreenPreview
-                  flowName={previewFlow.name || "Business"}
-                  category={previewFlow.category}
-                  screen={previewScreen}
-                  onNavigate={handlePreviewNavigate}
-                  canGoBack={previewHistory.length > 1}
-                  onHeaderBack={handlePreviewBack}
-                  availableScreenKeys={new Set((previewFlow.screens || []).map((s) => s.key))}
-                />
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={Boolean(cloneTarget)} onOpenChange={(open) => !open && setCloneTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -606,7 +522,6 @@ export default function FlowsPage() {
 
 interface FlowRowProps {
   flow: FlowTemplate;
-  onPreview: () => void;
   onEdit: () => void;
   onPublish: () => void;
   onRetire: () => void;
@@ -617,7 +532,6 @@ interface FlowRowProps {
 
 function FlowRow({
   flow,
-  onPreview,
   onEdit,
   onPublish,
   onRetire,
@@ -649,12 +563,7 @@ function FlowRow({
     <tr className="group transition-colors hover:bg-muted/40">
       <td className="px-4 py-3">
         <div className="flex flex-col">
-          <button
-            onClick={onPreview}
-            className="text-left font-mono text-xs font-medium text-foreground transition-colors hover:text-primary"
-          >
-            {flow.name}
-          </button>
+          <p className="font-mono text-xs font-medium text-foreground">{flow.name}</p>
           {flow.flowId && <span className="mt-0.5 text-[10px] text-muted-foreground">#{flow.flowId}</span>}
         </div>
       </td>
@@ -667,7 +576,6 @@ function FlowRow({
       <td className="px-4 py-3">
         <FlowStatusBadge status={flow.status} />
       </td>
-      <td className="px-4 py-3 text-xs text-muted-foreground">{flow.screens?.length || 0}</td>
       <td className="px-4 py-3 text-xs text-muted-foreground">
         {flow.createdAt
           ? new Date(flow.createdAt).toLocaleDateString("en-IN", {
@@ -679,20 +587,6 @@ function FlowRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center justify-end gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                onClick={onPreview}
-              >
-                <Eye className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Preview</TooltipContent>
-          </Tooltip>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-7 w-7">

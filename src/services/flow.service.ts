@@ -6,6 +6,7 @@ import type {
   FlowTemplate,
   UpdateFlowPayload,
 } from "@/types/flow.types";
+import { handleApiResponse } from "@/lib/utils/api-response";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3003";
 
@@ -20,19 +21,11 @@ function getHeaders(): Record<string, string> {
   };
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: "Request failed" }));
-    throw new Error(err?.message || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
 const normalizeFlow = (input: any): FlowTemplate => ({
   id: input?.id || input?._id || "",
   flowId: input?.flowId || input?.meta_flow_id,
   name: input?.name || "",
-  template_key: input?.template_key || "",
+  template_key: input?.template_key || input?.templateKey || "",
   description: input?.description || "",
   category: input?.category || "OTHER",
   status: input?.status || "UNKNOWN",
@@ -48,6 +41,7 @@ export async function listFlows(params: FlowListParams = {}): Promise<FlowListRe
     limit: String(params.limit ?? 20),
     offset: String(params.offset ?? 0),
     ...(params.status ? { status: params.status } : {}),
+    ...(params.category ? { category: params.category } : {}),
     ...(params.search ? { search: params.search } : {}),
   });
 
@@ -55,22 +49,44 @@ export async function listFlows(params: FlowListParams = {}): Promise<FlowListRe
     headers: getHeaders(),
   });
 
-  const payload = await handleResponse<any>(res);
+  const payload = await handleApiResponse<any>(res);
   const rows =
     payload?.data?.rows ||
     payload?.data?.data ||
     payload?.rows ||
     payload?.data ||
+    payload?.items ||
     [];
 
+  const normalizedLimit =
+    Number(payload?.pagination?.limit) ||
+    Number(payload?.meta?.pagination?.limit) ||
+    Number(params.limit ?? 20);
+  const normalizedOffset =
+    Number(payload?.pagination?.offset) ||
+    Number(payload?.meta?.pagination?.offset) ||
+    Number(params.offset ?? 0);
+  const normalizedTotal =
+    Number(payload?.pagination?.total) ||
+    Number(payload?.meta?.pagination?.total) ||
+    Number(payload?.total) ||
+    Number(payload?.data?.total) ||
+    0;
+
   const data = Array.isArray(rows) ? rows.map(normalizeFlow) : [];
-  const total = payload?.data?.total ?? payload?.total ?? data.length;
+  const total = Number.isFinite(normalizedTotal) && normalizedTotal >= 0
+    ? normalizedTotal
+    : data.length;
 
   return {
     data,
     total,
-    limit: Number(params.limit ?? 20),
-    offset: Number(params.offset ?? 0),
+    limit: Number.isFinite(normalizedLimit) && normalizedLimit > 0
+      ? normalizedLimit
+      : Number(params.limit ?? 20),
+    offset: Number.isFinite(normalizedOffset) && normalizedOffset >= 0
+      ? normalizedOffset
+      : Number(params.offset ?? 0),
   };
 }
 
@@ -79,7 +95,7 @@ export async function getFlow(id: string, version?: number): Promise<ApiResponse
   const res = await fetch(`${BASE_URL}/flows/${id}${query}`, {
     headers: getHeaders(),
   });
-  const payload = await handleResponse<any>(res);
+  const payload = await handleApiResponse<any>(res);
   const raw = payload?.data?.flow || payload?.data || payload;
 
   return {
@@ -98,7 +114,7 @@ export async function createFlow(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  const data = await handleResponse<any>(res);
+  const data = await handleApiResponse<any>(res);
   const raw = data?.data?.flow || data?.data || data;
 
   return {
@@ -118,7 +134,7 @@ export async function updateFlow(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  const data = await handleResponse<any>(res);
+  const data = await handleApiResponse<any>(res);
   const raw = data?.data?.flow || data?.data || data;
 
   return {
@@ -135,7 +151,7 @@ export async function publishFlow(id: string, notes?: string): Promise<ApiRespon
     headers: getHeaders(),
     body: JSON.stringify({ notes: notes || "Published from frontend" }),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 export async function retireFlow(id: string): Promise<ApiResponse<unknown>> {
@@ -143,7 +159,7 @@ export async function retireFlow(id: string): Promise<ApiResponse<unknown>> {
     method: "POST",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 export async function syncFlowStatus(id: string): Promise<ApiResponse<unknown>> {
@@ -151,7 +167,7 @@ export async function syncFlowStatus(id: string): Promise<ApiResponse<unknown>> 
     method: "POST",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 export async function syncFlowStatuses(
@@ -169,7 +185,7 @@ export async function syncFlowStatuses(
     method: "POST",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
 
 export async function cloneFlow(
@@ -181,7 +197,7 @@ export async function cloneFlow(
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  const data = await handleResponse<any>(res);
+  const data = await handleApiResponse<any>(res);
   const raw = data?.data?.flow || data?.data || data;
 
   return {
@@ -197,5 +213,5 @@ export async function deleteFlow(id: string): Promise<ApiResponse<unknown>> {
     method: "DELETE",
     headers: getHeaders(),
   });
-  return handleResponse(res);
+  return handleApiResponse(res);
 }
