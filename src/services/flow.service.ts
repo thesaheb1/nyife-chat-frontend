@@ -21,20 +21,175 @@ function getHeaders(): Record<string, string> {
   };
 }
 
-const normalizeFlow = (input: any): FlowTemplate => ({
-  id: input?.id || input?._id || "",
-  flowId: input?.flowId || input?.meta_flow_id,
-  name: input?.name || "",
-  template_key: input?.template_key || input?.templateKey || "",
-  description: input?.description || "",
-  category: input?.category || "OTHER",
-  status: input?.status || "UNKNOWN",
-  screens: Array.isArray(input?.screens) ? input.screens : [],
-  webhook_mapping: input?.webhook_mapping,
-  createdAt: input?.createdAt || input?.created_at,
-  updatedAt: input?.updatedAt || input?.updated_at,
-  version: input?.version,
+const isRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === "object" && value !== null;
+
+const extractFlowPayload = (payload: unknown): Record<string, any> => {
+  if (!isRecord(payload)) return {};
+
+  const candidates: unknown[] = [
+    payload?.data?.flow,
+    payload?.data?.item,
+    payload?.data?.row,
+    payload?.data?.data?.flow,
+    payload?.data?.data?.item,
+    payload?.data?.data?.row,
+    payload?.flow,
+    payload?.item,
+    payload?.row,
+    payload?.data?.data,
+    payload?.data,
+    payload,
+  ];
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    if (
+      "id" in candidate ||
+      "_id" in candidate ||
+      "flowId" in candidate ||
+      "meta_flow_id" in candidate ||
+      "templateKey" in candidate ||
+      "template_key" in candidate ||
+      "activeVersion" in candidate ||
+      "screens" in candidate
+    ) {
+      return candidate;
+    }
+  }
+
+  return {};
+};
+
+const normalizeOption = (option: any): { label: string; value: string } => ({
+  label: option?.label ?? "",
+  value: option?.value ?? "",
 });
+
+const normalizeComponent = (component: any) => {
+  const validation = isRecord(component?.validation) ? component.validation : {};
+
+  return {
+    key: component?.key ?? "",
+    type: component?.type ?? "input",
+    label: component?.label ?? undefined,
+    variable_key: component?.variable_key ?? component?.variableKey ?? undefined,
+    placeholder: component?.placeholder ?? undefined,
+    required:
+      typeof component?.required === "boolean"
+        ? component.required
+        : undefined,
+    helper_text: component?.helper_text ?? component?.helperText ?? undefined,
+    options: Array.isArray(component?.options)
+      ? component.options.map(normalizeOption)
+      : undefined,
+    min_length:
+      component?.min_length ??
+      component?.minLength ??
+      validation?.min_length ??
+      validation?.minLength,
+    max_length:
+      component?.max_length ??
+      component?.maxLength ??
+      validation?.max_length ??
+      validation?.maxLength,
+    min_value:
+      component?.min_value ??
+      component?.minValue ??
+      validation?.min_value ??
+      validation?.minValue,
+    max_value:
+      component?.max_value ??
+      component?.maxValue ??
+      validation?.max_value ??
+      validation?.maxValue,
+  };
+};
+
+const normalizeAction = (action: any) => ({
+  key: action?.key ?? "",
+  type: action?.type ?? "submit",
+  label: action?.label ?? undefined,
+  target_screen_key:
+    action?.target_screen_key ??
+    action?.targetScreenKey ??
+    undefined,
+  url: action?.url ?? action?.apiConfig?.url ?? undefined,
+  phone: action?.phone ?? action?.phoneNumber ?? undefined,
+});
+
+const normalizeScreen = (screen: any) => ({
+  key: screen?.key ?? "",
+  title: screen?.title ?? "",
+  is_entry_point:
+    typeof screen?.is_entry_point === "boolean"
+      ? screen.is_entry_point
+      : Boolean(screen?.isEntryPoint),
+  components: Array.isArray(screen?.components)
+    ? screen.components.map(normalizeComponent)
+    : [],
+  actions: Array.isArray(screen?.actions)
+    ? screen.actions.map(normalizeAction)
+    : [],
+});
+
+const extractScreens = (flow: Record<string, any>) => {
+  const activeVersion = isRecord(flow?.activeVersion) ? flow.activeVersion : {};
+  const candidates = [
+    flow?.screens,
+    activeVersion?.screens,
+    flow?.flow_json?.screens,
+    flow?.flowJson?.screens,
+    flow?.flow_definition?.screens,
+    flow?.flowDefinition?.screens,
+    flow?.definition?.screens,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+
+  return [];
+};
+
+const extractWebhookMapping = (flow: Record<string, any>): Record<string, unknown> | undefined => {
+  const activeVersion = isRecord(flow?.activeVersion) ? flow.activeVersion : {};
+  const candidate =
+    flow?.webhook_mapping ??
+    flow?.webhookMapping ??
+    activeVersion?.webhook_mapping ??
+    activeVersion?.webhookMapping;
+
+  if (isRecord(candidate)) return candidate;
+  if (typeof candidate !== "string") return undefined;
+
+  try {
+    const parsed = JSON.parse(candidate);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const normalizeFlow = (input: any): FlowTemplate => {
+  const flow = extractFlowPayload(input);
+  const activeVersion = isRecord(flow?.activeVersion) ? flow.activeVersion : {};
+
+  return {
+    id: flow?.id || flow?._id || flow?.uuid || "",
+    flowId: flow?.flowId || flow?.meta_flow_id || flow?.metaFlowId,
+    name: flow?.name || "",
+    template_key: flow?.template_key || flow?.templateKey || "",
+    description: flow?.description || "",
+    category: flow?.category || "OTHER",
+    status: flow?.status || activeVersion?.status || "UNKNOWN",
+    screens: extractScreens(flow).map(normalizeScreen),
+    webhook_mapping: extractWebhookMapping(flow),
+    createdAt: flow?.createdAt || flow?.created_at,
+    updatedAt: flow?.updatedAt || flow?.updated_at,
+    version: flow?.version ?? activeVersion?.version ?? flow?.currentDraftVersion,
+  };
+};
 
 type FlowPreviewData = {
   url: string;
@@ -102,11 +257,13 @@ export async function getFlow(id: string, version?: number): Promise<ApiResponse
     headers: getHeaders(),
   });
   const payload = await handleApiResponse<any>(res);
-  const raw = payload?.data?.flow || payload?.data || payload;
+  const raw = extractFlowPayload(payload);
+  const existingData = payload?.data && typeof payload.data === "object" ? payload.data : {};
 
   return {
     ...payload,
     data: {
+      ...existingData,
       flow: normalizeFlow(raw),
     },
   };
@@ -121,11 +278,13 @@ export async function createFlow(
     body: JSON.stringify(payload),
   });
   const data = await handleApiResponse<any>(res);
-  const raw = data?.data?.flow || data?.data || data;
+  const raw = extractFlowPayload(data);
+  const existingData = data?.data && typeof data.data === "object" ? data.data : {};
 
   return {
     ...data,
     data: {
+      ...existingData,
       flow: normalizeFlow(raw),
     },
   };
@@ -141,11 +300,13 @@ export async function updateFlow(
     body: JSON.stringify(payload),
   });
   const data = await handleApiResponse<any>(res);
-  const raw = data?.data?.flow || data?.data || data;
+  const raw = extractFlowPayload(data);
+  const existingData = data?.data && typeof data.data === "object" ? data.data : {};
 
   return {
     ...data,
     data: {
+      ...existingData,
       flow: normalizeFlow(raw),
     },
   };
@@ -204,11 +365,13 @@ export async function cloneFlow(
     body: JSON.stringify(payload),
   });
   const data = await handleApiResponse<any>(res);
-  const raw = data?.data?.flow || data?.data || data;
+  const raw = extractFlowPayload(data);
+  const existingData = data?.data && typeof data.data === "object" ? data.data : {};
 
   return {
     ...data,
     data: {
+      ...existingData,
       flow: normalizeFlow(raw),
     },
   };

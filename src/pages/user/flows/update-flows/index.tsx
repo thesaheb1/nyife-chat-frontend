@@ -12,22 +12,23 @@ import type { CreateFlowPayload, FlowTemplate, UpdateFlowPayload } from "@/types
 
 export default function UpdateFlows() {
   const navigate = useNavigate();
-  const { flowId } = useParams<{ flowId: string }>();
+  const { flowId, id } = useParams<{ flowId?: string; id?: string }>();
+  const resolvedFlowId = (flowId || id || "").trim();
 
   const flowQuery = useQuery({
-    queryKey: ["flow", flowId],
-    enabled: Boolean(flowId),
+    queryKey: ["flow", resolvedFlowId],
+    enabled: Boolean(resolvedFlowId),
     queryFn: async () => {
-      if (!flowId) throw new Error("Missing flow id");
-      const res = await getFlow(flowId);
+      if (!resolvedFlowId) throw new Error("Missing flow id");
+      const res = await getFlow(resolvedFlowId);
       return res.data.flow;
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: (payload: CreateFlowPayload | UpdateFlowPayload) => {
-      if (!flowId) throw new Error("Missing flow id");
-      return updateFlow(flowId, payload as UpdateFlowPayload);
+      if (!resolvedFlowId) throw new Error("Missing flow id");
+      return updateFlow(resolvedFlowId, payload as UpdateFlowPayload);
     },
   });
 
@@ -48,29 +49,39 @@ export default function UpdateFlows() {
     description: flow.description || "",
     category: flow.category,
     webhook_mapping_json: flow.webhook_mapping ? JSON.stringify(flow.webhook_mapping, null, 2) : "",
-    screens: flow.screens.map((screen) => ({
+    screens: (flow.screens || []).map((screen: any) => ({
       key: screen.key,
       title: screen.title,
-      is_entry_point: screen.is_entry_point,
-      components: screen.components.map((component) => ({
+      is_entry_point: screen.is_entry_point ?? screen.isEntryPoint,
+      components: (screen.components || []).map((component: any) => ({
         key: component.key,
         type: component.type,
         label: component.label,
-        variable_key: component.variable_key,
+        variable_key: component.variable_key ?? component.variableKey,
         placeholder: component.placeholder,
         required: component.required,
-        helper_text: component.helper_text,
-        options_text: component.options?.map((opt) => `${opt.label}|${opt.value}`).join("\n") || "",
-        min_length: typeof component.min_length === "number" && component.min_length > 0 ? component.min_length : undefined,
-        max_length: typeof component.max_length === "number" && component.max_length > 0 ? component.max_length : undefined,
-        min_value: component.min_value,
-        max_value: component.max_value,
+        helper_text: component.helper_text ?? component.helperText,
+        options_text: component.options?.map((opt: any) => `${opt.label}|${opt.value}`).join("\n") || "",
+        min_length:
+          typeof component.min_length === "number" && component.min_length > 0
+            ? component.min_length
+            : typeof component.minLength === "number" && component.minLength > 0
+              ? component.minLength
+              : undefined,
+        max_length:
+          typeof component.max_length === "number" && component.max_length > 0
+            ? component.max_length
+            : typeof component.maxLength === "number" && component.maxLength > 0
+              ? component.maxLength
+              : undefined,
+        min_value: component.min_value ?? component.minValue,
+        max_value: component.max_value ?? component.maxValue,
       })),
-      actions: screen.actions.map((action) => ({
+      actions: (screen.actions || []).map((action: any) => ({
         key: action.key,
         type: action.type,
         label: action.label,
-        target_screen_key: action.target_screen_key,
+        target_screen_key: action.target_screen_key ?? action.targetScreenKey,
         url: action.url,
         phone: action.phone,
       })),
@@ -114,6 +125,7 @@ export default function UpdateFlows() {
 
         {flowQuery.data && (
           <FlowTemplateForm
+            key={flowQuery.data.id || resolvedFlowId}
             defaultValues={mapDefaultValues(flowQuery.data)}
             onSubmit={handleSubmit}
             isLoading={updateMutation.isPending}

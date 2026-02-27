@@ -1,0 +1,704 @@
+{
+  "info": {
+    "_postman_id": "c8a1f2d0-campaign-service-collection",
+    "name": "Campaign Service API",
+    "description": "Complete API collection for the Campaign Management Microservice.\n\nBase URL: http://localhost:3004\n\nAll endpoints under /api/campaigns require a valid JWT Bearer token in the Authorization header.\n\n## Authentication\nObtain a JWT token from the User Service and set it in the `token` collection variable.\n\n## Campaign Statuses\n- `draft` – Initial state\n- `scheduled` – Scheduled for future execution\n- `running` – Currently sending messages\n- `paused` – Temporarily paused\n- `completed` – All messages sent\n- `failed` – Execution failed\n- `cancelled` – Manually cancelled",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3004",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "your_jwt_token_here",
+      "type": "string"
+    },
+    {
+      "key": "campaignId",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Check if the Campaign Service is running. No authentication required."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/health",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["health"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign Service is running\",\n  \"timestamp\": \"2026-02-27T10:00:00.000Z\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Service health and status endpoints."
+    },
+    {
+      "name": "CRUD Operations",
+      "item": [
+        {
+          "name": "Create Campaign",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.id) {",
+                  "        pm.collectionVariables.set('campaignId', response.data.id);",
+                  "        console.log('Campaign ID saved:', response.data.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Welcome Campaign\",\n  \"description\": \"Send welcome messages to new users\",\n  \"templateId\": \"template_123\",\n  \"groupId\": 1,\n  \"scheduledAt\": \"2026-03-01T10:00:00.000Z\",\n  \"status\": \"draft\",\n  \"metadata\": {\n    \"wabaId\": \"waba_id_here\",\n    \"phoneNumberId\": \"phone_number_id_here\",\n    \"bodyParameters\": {\n      \"1\": \"Welcome!\"\n    },\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"Welcome!\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"]
+            },
+            "description": "Create a new campaign.\n\n**Required Fields:**\n- `name` (string) – Campaign name\n\n**Optional Fields:**\n- `description` (string) – Campaign description\n- `templateId` (string) – WhatsApp template ID\n- `groupId` (integer) – Contact group ID\n- `scheduledAt` (ISO 8601 datetime) – When to schedule the campaign\n- `status` (string) – Initial status (default: `draft`)\n- `metadata` (object) – Additional metadata including:\n  - `wabaId` – WhatsApp Business Account ID\n  - `phoneNumberId` – Phone number ID for sending\n  - `bodyParameters` – Template body parameter values\n  - `components` – WhatsApp API component parameters\n\nThe service will automatically fetch the template name and group name from the Template Service and Contact Service respectively."
+          },
+          "response": [
+            {
+              "name": "201 - Created Successfully",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Welcome Campaign\",\n  \"description\": \"Send welcome messages to new users\",\n  \"templateId\": \"template_123\",\n  \"groupId\": 1,\n  \"status\": \"draft\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/campaigns",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "campaigns"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign created successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"userId\": 5,\n    \"name\": \"Welcome Campaign\",\n    \"description\": \"Send welcome messages to new users\",\n    \"templateId\": \"template_123\",\n    \"template_name\": \"welcome_template\",\n    \"groupId\": 1,\n    \"group_name\": \"New Users\",\n    \"status\": \"draft\"\n  }\n}"
+            },
+            {
+              "name": "401 - Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"error\": \"Access token required\"\n}"
+            },
+            {
+              "name": "500 - Server Error",
+              "status": "Internal Server Error",
+              "code": 500,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Error message details\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get All Campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns?status=&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by status: draft, scheduled, running, completed, failed, paused, cancelled (leave empty for all)"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page (default: 10)"
+                }
+              ]
+            },
+            "description": "Get all campaigns for the authenticated user with pagination and optional status filtering.\n\n**Query Parameters:**\n- `status` (optional) – Filter by campaign status\n- `page` (optional, default: 1) – Page number\n- `limit` (optional, default: 10) – Items per page\n\nResults are cached for 30 seconds. Cached responses include `cached: true`."
+          },
+          "response": [
+            {
+              "name": "200 - Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"count\": 2,\n  \"total\": 15,\n  \"totalPages\": 2,\n  \"currentPage\": 1,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"user_id\": 5,\n      \"name\": \"Welcome Campaign\",\n      \"description\": \"Send welcome messages\",\n      \"template_id\": \"template_123\",\n      \"template_name\": \"welcome_template\",\n      \"group_id\": 1,\n      \"group_name\": \"New Users\",\n      \"scheduled_at\": \"2026-03-01T10:00:00.000Z\",\n      \"started_at\": null,\n      \"status\": \"draft\",\n      \"sent_count\": 0,\n      \"failed_count\": 0,\n      \"total_recipients\": 0,\n      \"delivered_count\": 0,\n      \"read_count\": 0,\n      \"metadata\": null,\n      \"created_at\": \"2026-02-27T10:00:00.000Z\",\n      \"updated_at\": \"2026-02-27T10:00:00.000Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get All Campaigns (Filter by Status)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns?status=draft&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "description": "Filter by status: draft, scheduled, running, completed, failed, paused, cancelled"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page"
+                }
+              ]
+            },
+            "description": "Get all campaigns filtered by a specific status."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Campaign by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            },
+            "description": "Get a single campaign by its ID.\n\nNon-running campaigns are cached for 10 minutes. Running campaigns are always fetched fresh from the database.\n\nCached responses include `cached: true`."
+          },
+          "response": [
+            {
+              "name": "200 - Success",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"id\": 1,\n    \"user_id\": 5,\n    \"name\": \"Welcome Campaign\",\n    \"description\": \"Send welcome messages\",\n    \"template_id\": \"template_123\",\n    \"template_name\": \"welcome_template\",\n    \"group_id\": 1,\n    \"group_name\": \"New Users\",\n    \"scheduled_at\": \"2026-03-01T10:00:00.000Z\",\n    \"started_at\": null,\n    \"status\": \"draft\",\n    \"sent_count\": 0,\n    \"failed_count\": 0,\n    \"total_recipients\": 0,\n    \"delivered_count\": 0,\n    \"read_count\": 0,\n    \"metadata\": null,\n    \"created_at\": \"2026-02-27T10:00:00.000Z\",\n    \"updated_at\": \"2026-02-27T10:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Update Campaign",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Campaign Name\",\n  \"description\": \"Updated description\",\n  \"template_id\": \"template_456\",\n  \"group_id\": 2,\n  \"scheduled_at\": \"2026-03-15T14:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            },
+            "description": "Update an existing campaign. Send only the fields you want to update.\n\n**Updatable Fields:**\n- `name` (string)\n- `description` (string)\n- `template_id` (string)\n- `group_id` (integer)\n- `scheduled_at` (ISO 8601 datetime)\n- `status` (string)\n- `metadata` (JSON string)\n- Any other column in the campaigns table\n\nCache is invalidated on update."
+          },
+          "response": [
+            {
+              "name": "200 - Updated Successfully",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign updated successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"user_id\": 5,\n    \"name\": \"Updated Campaign Name\",\n    \"description\": \"Updated description\",\n    \"template_id\": \"template_456\",\n    \"template_name\": \"welcome_template\",\n    \"group_id\": 2,\n    \"group_name\": \"New Users\",\n    \"scheduled_at\": \"2026-03-15T14:00:00.000Z\",\n    \"status\": \"draft\",\n    \"created_at\": \"2026-02-27T10:00:00.000Z\",\n    \"updated_at\": \"2026-02-27T12:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Campaign",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}"]
+            },
+            "description": "Delete a campaign and all associated campaign logs (cascade delete).\n\nCache is invalidated on deletion."
+          },
+          "response": [
+            {
+              "name": "200 - Deleted Successfully",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign deleted successfully\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Basic Create, Read, Update, Delete operations for campaigns."
+    },
+    {
+      "name": "Campaign Execution",
+      "item": [
+        {
+          "name": "Execute Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/execute",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "execute"]
+            },
+            "description": "Start executing a campaign. This will:\n\n1. Validate campaign exists and is not already running/completed\n2. Fetch template details from Template Service\n3. Fetch group contacts from Contact Service\n4. Retrieve WABA account and phone number from User Service\n5. Create campaign logs for each recipient\n6. Publish `campaign_started` event to Kafka\n7. Update campaign status to `running`\n\n**Prerequisites:**\n- Campaign must be in `draft`, `scheduled`, `paused`, or `failed` status\n- Template must exist and be valid\n- Group must have at least one contact\n- User must have a connected WhatsApp Business Account with a phone number\n\n**Kafka Event:** `campaign.events` topic with `campaign_started` event"
+          },
+          "response": [
+            {
+              "name": "200 - Execution Started",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign execution started\",\n  \"data\": {\n    \"campaignId\": 1,\n    \"totalRecipients\": 150,\n    \"status\": \"running\"\n  }\n}"
+            },
+            {
+              "name": "400 - Already Running",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign is already running\"\n}"
+            },
+            {
+              "name": "400 - Already Completed",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign has already been executed\"\n}"
+            },
+            {
+              "name": "400 - No Contacts",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"No contacts found in the selected group\"\n}"
+            },
+            {
+              "name": "400 - No WABA",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"No WhatsApp Business Account connected. Please complete the embedded signup first.\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Pause Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/pause",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "pause"]
+            },
+            "description": "Pause a currently running campaign.\n\n**Prerequisite:** Campaign must be in `running` status.\n\n**Kafka Event:** `campaign.events` topic with `campaign_paused` event"
+          },
+          "response": [
+            {
+              "name": "200 - Paused",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign paused successfully\"\n}"
+            },
+            {
+              "name": "400 - Not Running",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign is not running\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Resume Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/resume",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "resume"]
+            },
+            "description": "Resume a paused campaign.\n\n**Prerequisite:** Campaign must be in `paused` status.\n\n**Kafka Event:** `campaign.events` topic with `campaign_resumed` event"
+          },
+          "response": [
+            {
+              "name": "200 - Resumed",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign resumed successfully\"\n}"
+            },
+            {
+              "name": "400 - Not Paused",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign is not paused\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Cancel Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "cancel"]
+            },
+            "description": "Cancel a campaign.\n\n**Prerequisite:** Campaign must be in `running`, `paused`, or `scheduled` status.\n\n**Kafka Event:** `campaign.events` topic with `campaign_cancelled` event"
+          },
+          "response": [
+            {
+              "name": "200 - Cancelled",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign cancelled successfully\"\n}"
+            },
+            {
+              "name": "400 - Cannot Cancel",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign cannot be cancelled\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Schedule Campaign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledAt\": \"2026-03-10T09:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "schedule"]
+            },
+            "description": "Schedule a campaign for future execution.\n\n**Required Fields:**\n- `scheduledAt` (ISO 8601 datetime) – Must be a future date/time\n\n**Prerequisite:** Campaign must be in `draft` or `scheduled` status.\n\nUpdates campaign status to `scheduled` and sets the `scheduled_at` timestamp."
+          },
+          "response": [
+            {
+              "name": "200 - Scheduled",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"message\": \"Campaign scheduled successfully\",\n  \"data\": {\n    \"campaignId\": 1,\n    \"scheduledAt\": \"2026-03-10T09:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "400 - Missing scheduledAt",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Scheduled date/time is required\"\n}"
+            },
+            {
+              "name": "400 - Past Date",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Scheduled time must be in the future\"\n}"
+            },
+            {
+              "name": "400 - Invalid Status",
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Only draft or scheduled campaigns can be rescheduled\"\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Campaign lifecycle management: execute, pause, resume, cancel, and schedule."
+    },
+    {
+      "name": "Analytics & Reporting",
+      "item": [
+        {
+          "name": "Get Campaign Analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/analytics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "analytics"]
+            },
+            "description": "Get aggregate analytics for a campaign including delivery rates, read rates, and failure rates.\n\nAnalytics are computed from both the `campaigns` table counters and the `campaign_logs` table.\n\nResults are cached for 1 minute."
+          },
+          "response": [
+            {
+              "name": "200 - Analytics",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"campaignId\": \"1\",\n    \"campaignName\": \"Welcome Campaign\",\n    \"status\": \"completed\",\n    \"totalRecipients\": 150,\n    \"total_recipients\": 150,\n    \"sent_count\": 148,\n    \"delivered_count\": 145,\n    \"read_count\": 120,\n    \"failed_count\": 2,\n    \"pending_count\": 0,\n    \"deliveryRate\": \"97.97\",\n    \"readRate\": \"82.76\",\n    \"failureRate\": \"1.35\"\n  }\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign Stats (Alias)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "stats"]
+            },
+            "description": "Alias for the analytics endpoint. Returns the same data as GET /api/campaigns/:id/analytics."
+          },
+          "response": [
+            {
+              "name": "200 - Stats",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"data\": {\n    \"campaignId\": \"1\",\n    \"campaignName\": \"Welcome Campaign\",\n    \"status\": \"completed\",\n    \"totalRecipients\": 150,\n    \"total_recipients\": 150,\n    \"sent_count\": 148,\n    \"delivered_count\": 145,\n    \"read_count\": 120,\n    \"failed_count\": 2,\n    \"pending_count\": 0,\n    \"deliveryRate\": \"97.97\",\n    \"readRate\": \"82.76\",\n    \"failureRate\": \"1.35\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign Messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/messages?status=&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by log status: pending, sent, delivered, failed, read (leave empty for all)"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Items per page (default: 50)"
+                }
+              ]
+            },
+            "description": "Get the per-recipient message log for a campaign with pagination and optional status filtering.\n\n**Query Parameters:**\n- `status` (optional) – Filter by message status: `pending`, `sent`, `delivered`, `failed`, `read`\n- `page` (optional, default: 1) – Page number\n- `limit` (optional, default: 50) – Items per page"
+          },
+          "response": [
+            {
+              "name": "200 - Messages",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": true,\n  \"count\": 50,\n  \"total\": 150,\n  \"totalPages\": 3,\n  \"currentPage\": 1,\n  \"data\": [\n    {\n      \"id\": 1,\n      \"campaign_id\": 1,\n      \"contact_id\": 10,\n      \"contact_name\": \"John Doe\",\n      \"phone_number\": \"+919876543210\",\n      \"status\": \"delivered\",\n      \"message_id\": \"wamid.abc123\",\n      \"error_message\": null,\n      \"retry_count\": 0,\n      \"sent_at\": \"2026-02-27T10:01:00.000Z\",\n      \"delivered_at\": \"2026-02-27T10:01:05.000Z\",\n      \"read_at\": \"2026-02-27T10:05:00.000Z\",\n      \"created_at\": \"2026-02-27T10:00:00.000Z\",\n      \"updated_at\": \"2026-02-27T10:05:00.000Z\"\n    },\n    {\n      \"id\": 2,\n      \"campaign_id\": 1,\n      \"contact_id\": 11,\n      \"contact_name\": \"Jane Smith\",\n      \"phone_number\": \"+919876543211\",\n      \"status\": \"failed\",\n      \"message_id\": null,\n      \"error_message\": \"Phone number not on WhatsApp\",\n      \"retry_count\": 1,\n      \"sent_at\": null,\n      \"delivered_at\": null,\n      \"read_at\": null,\n      \"created_at\": \"2026-02-27T10:00:00.000Z\",\n      \"updated_at\": \"2026-02-27T10:01:10.000Z\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "404 - Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"success\": false,\n  \"error\": \"Campaign not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Campaign Messages (Filter by Status)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{campaignId}}/messages?status=failed&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{campaignId}}", "messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "failed",
+                  "description": "Filter by: pending, sent, delivered, failed, read"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number"
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Items per page"
+                }
+              ]
+            },
+            "description": "Get campaign messages filtered by a specific status (e.g., failed messages only)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Campaign analytics, statistics, and per-recipient message logs."
+    }
+  ]
+}

@@ -825,13 +825,30 @@ export default function FlowTemplateForm({
   onCancel,
   isUpdate = false,
 }: FlowTemplateFormProps) {
+  const updateFallbackValues: Partial<FlowTemplateFormValues> = isUpdate
+    ? {
+        name: "",
+        template_key: "",
+        description: "",
+        category: "OTHER",
+        webhook_mapping_json: "",
+        screens: [],
+      }
+    : {};
+
   const form = useForm<FlowTemplateFormValues>({
     resolver: zodResolver(flowFormSchema) as any,
     mode: "onChange",
     defaultValues: {
       ...DEFAULT_VALUES,
+      ...updateFallbackValues,
       ...defaultValues,
-      screens: defaultValues?.screens?.length ? defaultValues.screens : DEFAULT_VALUES.screens,
+      screens:
+        typeof defaultValues?.screens !== "undefined"
+          ? defaultValues.screens
+          : isUpdate
+            ? []
+            : DEFAULT_VALUES.screens,
     },
   });
 

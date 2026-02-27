@@ -483,12 +483,19 @@ export default function FlowsPage() {
                   </td>
                 </tr>
               ) : (
-                sortedFlows.map((flow) => (
+                sortedFlows.map((flow, index) => (
                   <FlowRow
-                    key={flow.id}
+                    key={flow.id || flow.flowId || `${flow.template_key}-${index}`}
                     flow={flow}
                     onPreview={() => handlePreviewOpen(flow)}
-                    onEdit={() => navigate(`/flows/${flow.id}/update`)}
+                    onEdit={() => {
+                      const flowRouteId = (flow.id || flow.flowId || "").trim();
+                      if (!flowRouteId) {
+                        toast.error("Flow identifier is missing. Please refresh and try again.");
+                        return;
+                      }
+                      navigate(`/flows/${flowRouteId}/update`);
+                    }}
                     onPublish={() => publishMutation.mutate(flow.id)}
                     onRetire={() => retireMutation.mutate(flow.id)}
                     onSync={() => syncOneMutation.mutate(flow.id)}
@@ -777,7 +784,7 @@ function FlowRow({
                 <UploadCloud className="mr-2 h-4 w-4" /> Publish
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onRetire}>
-                <Ban className="mr-2 h-4 w-4" /> Retire
+                <Ban className="mr-2 h-4 w-4" /> Deprecate
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onSync}>
                 <RefreshCw className="mr-2 h-4 w-4" /> Sync Status
