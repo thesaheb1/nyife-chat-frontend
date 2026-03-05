@@ -5,6 +5,7 @@ import {
   Form,
   LayoutDashboard,
   LayoutPanelTop,
+  Megaphone,
   MessageSquareText,
   Settings,
   Users
@@ -21,4 +22,5 @@ export const RouteIcons: Record<string, ReactNode> = {
   Settings: <Settings />,
   Chat: <MessageSquareText />,
   Contacts: <ContactRound />,
+  Campaigns: <Megaphone />,
 };

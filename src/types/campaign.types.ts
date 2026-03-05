@@ -46,6 +46,7 @@ export interface CampaignListParams {
   status?: CampaignStatus;
   page?: number;
   limit?: number;
+  search?: string;
 }
 
 export interface CampaignListResponse {

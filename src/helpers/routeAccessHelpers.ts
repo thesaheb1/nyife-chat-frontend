@@ -116,3 +116,5 @@ export const flattenRoutes = (routeTree: AppRoute[] = []): AppRoute[] => {
 
   return flat;
 };
+
+

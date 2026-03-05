@@ -12,6 +12,8 @@ import { ApiHttpError } from './lib/utils/api-response'
 import './index.css'
 import { persistor, store } from './redux/store/store'
 
+
+
 const bootstrapTheme = () => {
   const root = document.documentElement
   let mode: 'light' | 'dark' = window.matchMedia('(prefers-color-scheme: dark)').matches

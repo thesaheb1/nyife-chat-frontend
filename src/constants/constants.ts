@@ -125,6 +125,27 @@ export const userRoutesList = [
             }
         ],
     },
+    // ── Campaigns ──────────────────────────────────────────────
+    {
+        path: "/campaigns",
+        pageKey: "user_campaigns",
+        permission: {
+            view: "/campaigns",
+            create: "/campaigns/create",
+            update: "/campaigns/:campaignId/update",
+            delete: "/campaigns",
+        },
+        child: [
+            {
+                path: "/campaigns/create",
+                pageKey: "user_create_campaign",
+            },
+            {
+                path: "/campaigns/:campaignId/update",
+                pageKey: "user_update_campaign",
+            }
+        ],
+    },
     // ── Settings ──────────────────────────────────────────────────
     {
         pageKey: "user_settings",

@@ -24,6 +24,9 @@ const UserContacts = lazy(() => import("@/pages/user/contacts"));
 const UserFlows = lazy(() => import("@/pages/user/flows"));
 const UserFlowsCreate = lazy(() => import("@/pages/user/flows/create-flows"));
 const UserFlowsUpdate = lazy(() => import("@/pages/user/flows/update-flows"));
+const UserCampaigns = lazy(() => import("@/pages/user/campaigns"));
+const UserCampaignsCreate = lazy(() => import("@/pages/user/campaigns/create-campaign"));
+const UserCampaignsUpdate = lazy(() => import("@/pages/user/campaigns/update-campaign"));
 const UserTemplates = lazy(() => import("@/pages/user/template"));
 const UserTemplatesCreate = lazy(() => import("@/pages/user/template/create-template"));
 const UserTemplatesUpdate = lazy(() => import("@/pages/user/template/update-template"));
@@ -271,6 +274,37 @@ export const userRouteList: AppRoute[] = [
         path: "/flows/:flowId/update",
         element: UserFlowsUpdate,
         pageKey: "user_update_flow",
+        defaultRender: false
+      }
+    ],
+  },
+  // ── Campaigns ──────────────────────────────────────────────
+  {
+    path: "/campaigns",
+    element: UserCampaigns,
+    pageKey: "user_campaigns",
+    permission: {
+      view: "/campaigns",
+      create: "/campaigns/create",
+      update: "/campaigns/:campaignId/update",
+      delete: "/campaigns",
+    },
+    sidebarProps: {
+      displayText: "Campaigns",
+      icon: RouteIcons["Campaigns"],
+    },
+    defaultRender: false,
+    child: [
+      {
+        path: "/campaigns/create",
+        element: UserCampaignsCreate,
+        pageKey: "user_create_campaign",
+        defaultRender: false
+      },
+      {
+        path: "/campaigns/:campaignId/update",
+        element: UserCampaignsUpdate,
+        pageKey: "user_update_campaign",
         defaultRender: false
       }
     ],
