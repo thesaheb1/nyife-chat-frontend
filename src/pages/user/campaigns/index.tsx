@@ -1,16 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  Activity,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   Ban,
   BarChart3,
   CalendarClock,
+  CheckCheck,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
+  Clock3,
+  Eye,
   FileText,
   Filter,
   MessageSquare,
@@ -22,7 +27,9 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
@@ -104,6 +111,42 @@ const toDateTimeDisplay = (value?: string | null): string => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const numberFormatter = new Intl.NumberFormat("en-IN");
+
+const toSafeNumber = (value?: string | number | null): number => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const toRatioPercent = (part: number, total: number): number => {
+  if (total <= 0) return 0;
+  const ratio = (part / total) * 100;
+  if (!Number.isFinite(ratio)) return 0;
+  return Math.max(0, Math.min(100, ratio));
+};
+
+const toBoundedPercent = (value?: string | number | null, fallback = 0): number => {
+  if (value === undefined || value === null || value === "") {
+    return Math.max(0, Math.min(100, fallback));
+  }
+
+  const parsed = typeof value === "number" ? value : Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return Math.max(0, Math.min(100, fallback));
+  return Math.max(0, Math.min(100, parsed));
+};
+
+const formatCount = (value: number): string => numberFormatter.format(Math.max(0, Math.round(value)));
+
+const formatPercent = (value: number): string => {
+  const bounded = Math.max(0, Math.min(100, value));
+  const rounded = Number.isInteger(bounded) ? bounded.toFixed(0) : bounded.toFixed(1);
+  return `${rounded}%`;
 };
 
 function MessageStatusBadge({ status }: { status: string }) {
@@ -728,36 +771,30 @@ export default function CampaignsPage() {
       </Dialog>
 
       <Dialog open={Boolean(analyticsTarget)} onOpenChange={(open) => !open && setAnalyticsTarget(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>{analyticsTarget?.name || "Campaign Analytics"}</DialogTitle>
-            <DialogDescription>
-              Delivery, read and failure metrics for this campaign.
+            <DialogDescription className="flex flex-wrap items-center gap-2">
+              <span>Delivery, read and failure metrics for this campaign.</span>
+              {analyticsTarget?.status ? <CampaignStatusBadge status={analyticsTarget.status} /> : null}
             </DialogDescription>
           </DialogHeader>
 
           {analyticsQuery.isLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-20 rounded-lg" />
-              ))}
+            <div className="space-y-3">
+              <Skeleton className="h-44 rounded-xl" />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <Skeleton key={idx} className="h-28 rounded-xl" />
+                ))}
+              </div>
             </div>
           ) : analyticsQuery.isError ? (
             <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
               {getApiErrorMessage(analyticsQuery.error, "Failed to load analytics")}
             </div>
           ) : analyticsQuery.data ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <MetricCard label="Recipients" value={analyticsQuery.data.totalRecipients} />
-              <MetricCard label="Sent" value={analyticsQuery.data.sentCount} />
-              <MetricCard label="Delivered" value={analyticsQuery.data.deliveredCount} />
-              <MetricCard label="Read" value={analyticsQuery.data.readCount} />
-              <MetricCard label="Failed" value={analyticsQuery.data.failedCount} />
-              <MetricCard label="Pending" value={analyticsQuery.data.pendingCount} />
-              <MetricCard label="Delivery Rate" value={`${analyticsQuery.data.deliveryRate || "0"}%`} />
-              <MetricCard label="Read Rate" value={`${analyticsQuery.data.readRate || "0"}%`} />
-              <MetricCard label="Failure Rate" value={`${analyticsQuery.data.failureRate || "0"}%`} />
-            </div>
+            <CampaignAnalyticsOverview analytics={analyticsQuery.data} />
           ) : null}
         </DialogContent>
       </Dialog>
@@ -865,11 +902,254 @@ export default function CampaignsPage() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string | number | undefined }) {
+type AnalyticsTone = "sky" | "blue" | "emerald" | "green" | "amber" | "rose";
+
+const ANALYTICS_TONES: Record<AnalyticsTone, { card: string; icon: string; bar: string }> = {
+  sky: {
+    card: "border-sky-200/70 bg-gradient-to-br from-sky-50 via-white to-indigo-50/70",
+    icon: "border-sky-200 bg-sky-100 text-sky-700",
+    bar: "from-sky-500 to-indigo-500",
+  },
+  blue: {
+    card: "border-blue-200/70 bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/60",
+    icon: "border-blue-200 bg-blue-100 text-blue-700",
+    bar: "from-blue-500 to-indigo-500",
+  },
+  emerald: {
+    card: "border-emerald-200/70 bg-gradient-to-br from-emerald-50/80 via-white to-green-50/60",
+    icon: "border-emerald-200 bg-emerald-100 text-emerald-700",
+    bar: "from-emerald-500 to-green-500",
+  },
+  green: {
+    card: "border-green-200/70 bg-gradient-to-br from-green-50/80 via-white to-lime-50/60",
+    icon: "border-green-200 bg-green-100 text-green-700",
+    bar: "from-green-500 to-lime-500",
+  },
+  amber: {
+    card: "border-amber-200/70 bg-gradient-to-br from-amber-50/80 via-white to-orange-50/60",
+    icon: "border-amber-200 bg-amber-100 text-amber-700",
+    bar: "from-amber-500 to-orange-500",
+  },
+  rose: {
+    card: "border-rose-200/70 bg-gradient-to-br from-rose-50/80 via-white to-pink-50/60",
+    icon: "border-rose-200 bg-rose-100 text-rose-700",
+    bar: "from-rose-500 to-pink-500",
+  },
+};
+
+interface CampaignAnalyticsOverviewProps {
+  analytics: CampaignAnalytics;
+}
+
+function CampaignAnalyticsOverview({ analytics }: CampaignAnalyticsOverviewProps) {
+  const totalRecipients = toSafeNumber(analytics.totalRecipients);
+  const sentCount = toSafeNumber(analytics.sentCount);
+  const deliveredCount = toSafeNumber(analytics.deliveredCount);
+  const readCount = toSafeNumber(analytics.readCount);
+  const failedCount = toSafeNumber(analytics.failedCount);
+  const pendingCount = toSafeNumber(analytics.pendingCount);
+
+  const deliveryRate = toBoundedPercent(analytics.deliveryRate, toRatioPercent(deliveredCount, totalRecipients));
+  const readRate = toBoundedPercent(analytics.readRate, toRatioPercent(readCount, totalRecipients));
+  const failureRate = toBoundedPercent(analytics.failureRate, toRatioPercent(failedCount, totalRecipients));
+  const processedCount = Math.max(0, totalRecipients - pendingCount);
+  const processedRate = toRatioPercent(processedCount, totalRecipients);
+
+  const deliveryDistribution = [
+    { label: "Delivered", value: deliveredCount, dotClass: "bg-emerald-500" },
+    { label: "Read", value: readCount, dotClass: "bg-green-500" },
+    { label: "Failed", value: failedCount, dotClass: "bg-rose-500" },
+    { label: "Pending", value: pendingCount, dotClass: "bg-amber-500" },
+  ];
+
   return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-foreground">{value ?? 0}</p>
+    <div className="space-y-4">
+      <div className="relative overflow-hidden rounded-xl border border-sky-200/70 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4 sm:p-5">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-sky-200/40 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 left-8 h-36 w-36 rounded-full bg-indigo-200/30 blur-3xl" />
+
+        <div className="relative grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-3">
+            <Badge variant="secondary" className="w-fit border border-sky-200/80 bg-sky-100/70 text-sky-700">
+              <Activity className="mr-1 h-3.5 w-3.5" />
+              Live Performance
+            </Badge>
+
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Campaign Audience</p>
+              <p className="text-3xl font-semibold tracking-tight text-foreground">{formatCount(totalRecipients)}</p>
+              <p className="text-xs text-muted-foreground sm:text-sm">
+                Sent {formatCount(sentCount)} • Delivered {formatCount(deliveredCount)} • Read {formatCount(readCount)}
+              </p>
+            </div>
+
+            <div className="space-y-1.5 rounded-lg border border-white/60 bg-background/80 p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-foreground">Execution Progress</span>
+                <span className="font-semibold text-foreground">{formatPercent(processedRate)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-200/70">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 transition-all"
+                  style={{ width: `${processedRate}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {formatCount(processedCount)} processed • {formatCount(pendingCount)} pending
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {deliveryDistribution.map((item) => (
+                <span
+                  key={item.label}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-2 py-1 text-[11px] text-muted-foreground"
+                >
+                  <span className={`h-2 w-2 rounded-full ${item.dotClass}`} />
+                  {item.label}: {formatCount(item.value)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-background/85 p-4 shadow-sm backdrop-blur">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Performance Rates</p>
+            <div className="mt-3 space-y-3">
+              <AnalyticsRateRow
+                label="Delivery Rate"
+                value={deliveryRate}
+                helper={`${formatCount(deliveredCount)} contacts delivered`}
+                fillClassName="from-emerald-500 to-green-500"
+              />
+              <AnalyticsRateRow
+                label="Read Rate"
+                value={readRate}
+                helper={`${formatCount(readCount)} contacts read the message`}
+                fillClassName="from-blue-500 to-indigo-500"
+              />
+              <AnalyticsRateRow
+                label="Failure Rate"
+                value={failureRate}
+                helper={`${formatCount(failedCount)} contacts failed`}
+                fillClassName="from-rose-500 to-pink-500"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <AnalyticsStatCard
+          label="Recipients"
+          value={totalRecipients}
+          hint="Total campaign audience"
+          tone="sky"
+          progress={100}
+          icon={<Users className="h-4 w-4" />}
+        />
+        <AnalyticsStatCard
+          label="Sent"
+          value={sentCount}
+          hint={`${formatPercent(toRatioPercent(sentCount, totalRecipients))} of recipients`}
+          tone="blue"
+          progress={toRatioPercent(sentCount, totalRecipients)}
+          icon={<Send className="h-4 w-4" />}
+        />
+        <AnalyticsStatCard
+          label="Delivered"
+          value={deliveredCount}
+          hint={`${formatPercent(toRatioPercent(deliveredCount, totalRecipients))} delivery coverage`}
+          tone="emerald"
+          progress={toRatioPercent(deliveredCount, totalRecipients)}
+          icon={<CheckCheck className="h-4 w-4" />}
+        />
+        <AnalyticsStatCard
+          label="Read"
+          value={readCount}
+          hint={`${formatPercent(toRatioPercent(readCount, totalRecipients))} read coverage`}
+          tone="green"
+          progress={toRatioPercent(readCount, totalRecipients)}
+          icon={<Eye className="h-4 w-4" />}
+        />
+        <AnalyticsStatCard
+          label="Failed"
+          value={failedCount}
+          hint={`${formatPercent(toRatioPercent(failedCount, totalRecipients))} failed attempts`}
+          tone="rose"
+          progress={toRatioPercent(failedCount, totalRecipients)}
+          icon={<CircleAlert className="h-4 w-4" />}
+        />
+        <AnalyticsStatCard
+          label="Pending"
+          value={pendingCount}
+          hint={`${formatPercent(toRatioPercent(pendingCount, totalRecipients))} still pending`}
+          tone="amber"
+          progress={toRatioPercent(pendingCount, totalRecipients)}
+          icon={<Clock3 className="h-4 w-4" />}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface AnalyticsRateRowProps {
+  label: string;
+  value: number;
+  helper: string;
+  fillClassName: string;
+}
+
+function AnalyticsRateRow({ label, value, helper, fillClassName }: AnalyticsRateRowProps) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="font-semibold text-foreground">{formatPercent(value)}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-zinc-200/70">
+        <div
+          className={`h-full rounded-full bg-gradient-to-r transition-all ${fillClassName}`}
+          style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+        />
+      </div>
+      <p className="text-[11px] text-muted-foreground">{helper}</p>
+    </div>
+  );
+}
+
+interface AnalyticsStatCardProps {
+  label: string;
+  value: number;
+  hint: string;
+  tone: AnalyticsTone;
+  progress: number;
+  icon: ReactNode;
+}
+
+function AnalyticsStatCard({ label, value, hint, tone, progress, icon }: AnalyticsStatCardProps) {
+  const styles = ANALYTICS_TONES[tone];
+  const boundedProgress = Math.max(0, Math.min(100, progress));
+  const progressWidth = boundedProgress > 0 ? Math.max(4, boundedProgress) : 0;
+
+  return (
+    <div className={`rounded-xl border p-4 shadow-sm ${styles.card}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-semibold leading-none text-foreground">{formatCount(value)}</p>
+          <p className="mt-2 truncate text-[11px] text-muted-foreground">{hint}</p>
+        </div>
+        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${styles.icon}`}>
+          {icon}
+        </span>
+      </div>
+
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-200/70">
+        <div
+          className={`h-full rounded-full bg-gradient-to-r transition-all ${styles.bar}`}
+          style={{ width: `${progressWidth}%` }}
+        />
+      </div>
     </div>
   );
 }
