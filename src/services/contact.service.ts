@@ -407,10 +407,9 @@ export async function getContactsByGroup(
 }
 
 export async function listGroups(params: ListGroupsParams = {}): Promise<ListGroupsResponse> {
+  const includeContacts = params.includeContacts ?? true;
   const query = new URLSearchParams({
-    ...(typeof params.includeContacts === "boolean"
-      ? { includeContacts: params.includeContacts ? "true" : "false" }
-      : {}),
+    includeContacts: includeContacts ? "true" : "false",
     ...(typeof params.page === "number" ? { page: String(params.page) } : {}),
     ...(typeof params.limit === "number" ? { limit: String(params.limit) } : {}),
     ...(typeof params.userId === "number" ? { userId: String(params.userId) } : {}),

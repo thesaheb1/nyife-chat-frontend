@@ -224,8 +224,10 @@ export default function ContactsPage() {
 
   const groupsQuery = useQuery({
     queryKey: ["contact-groups"],
-    queryFn: () => listGroups(),
-    staleTime: 60 * 1000,
+    queryFn: () => listGroups({ includeContacts: true }),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const contactsQuery = useQuery({

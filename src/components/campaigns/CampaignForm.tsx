@@ -144,8 +144,10 @@ export default function CampaignForm({
 
   const groupsQuery = useQuery({
     queryKey: ["campaign-form-groups"],
-    queryFn: () => listGroups(),
-    staleTime: 5 * 60 * 1000,
+    queryFn: () => listGroups({ includeContacts: true }),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const templates = templatesQuery.data?.data || [];
